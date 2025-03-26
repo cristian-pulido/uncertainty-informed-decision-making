@@ -1,0 +1,21 @@
+{
+    "data_generation": {
+        "rows": 40,
+        "cols": 40,
+        "time_steps": 180,
+        "hotspots_num": 5,
+        "lam": 2,
+        "num_simulations": 5
+    },
+    "data_partition": {
+        "train_months": 3,
+        "calibration_months": 1,
+        "test_months": 2,
+        "time_granularity": "days"
+    },
+    "evaluation": {
+        "hotspot_percentage": 0.1,
+        "hotspot_definition": "by_crimes"
+        }
+  }
+  

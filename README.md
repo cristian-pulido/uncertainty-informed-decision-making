@@ -9,7 +9,7 @@ Large simulation outputs and sensitive real-world datasets are stored outside th
 
 ### Folder structure:
 
-├── uncertainty-informed-decision-making/ # this repository 
-└── uncertainty-informed-data/ # external data 
-    ├── real_data/ 
+├── uncertainty-informed-decision-making/ # this repository \
+└── uncertainty-informed-data/ # external data \
+    ├── real_data/ \
     └── simulations/
