@@ -3,16 +3,16 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 class SyntheticHotspots:
-    """
-    Base class for synthetic hotspot data generation.
-    """
     def __init__(self, rows, cols, time_steps, random_state=None):
         self.rows = rows
         self.cols = cols
         self.time_steps = time_steps
-        self.random_state = random_state
-        np.random.seed(self.random_state)
-        
+
+        if isinstance(random_state, (int, type(None))):
+            self.random_state = np.random.RandomState(random_state)
+        else:
+            self.random_state = random_state
+
         self.data = np.zeros((time_steps, rows, cols))
 
     def generate(self):
@@ -54,27 +54,44 @@ class SyntheticHotspots:
 class PoissonHotspots(SyntheticHotspots):
     """
     Synthetic hotspots generated with a Poisson distribution.
+    Allows multiple variable-size hotspots, varying intensity, and global noise.
     """
-    def __init__(self, rows, cols, time_steps, lam=2, hotspots_num=2, hotspot_intensity=(10, 15), random_state=None):
+    def __init__(self, rows, cols, time_steps, base_lam=1, n_hotspots=5,
+                 hotspot_strength_range=(5, 15), hotspot_size_range=(1, 3),
+                 noise_level=0.2, random_state=None):
         super().__init__(rows, cols, time_steps, random_state)
-        self.lam = lam
-        self.hotspots_num = hotspots_num
-        self.hotspot_intensity = hotspot_intensity
-        self.hotspot_coords = []
+        self.base_lam = base_lam
+        self.n_hotspots = n_hotspots
+        self.hotspot_strength_range = hotspot_strength_range
+        self.hotspot_size_range = hotspot_size_range
+        self.noise_level = noise_level
 
     def generate(self):
-        self.data = np.random.poisson(self.lam, size=(self.time_steps, self.rows, self.cols))
+        
+        self.hotspot_locations = []
+        for _ in range(self.n_hotspots):
+            size = self.random_state.randint(
+                self.hotspot_size_range[0], self.hotspot_size_range[1] + 1
+            )
+            r = self.random_state.randint(0, self.rows - size + 1)
+            c = self.random_state.randint(0, self.cols - size + 1)
+            self.hotspot_locations.append((r, c, size))
 
-        # Fixed hotspot locations
-        self.hotspot_coords = [
-            (np.random.randint(self.rows), np.random.randint(self.cols)) 
-            for _ in range(self.hotspots_num)
-        ]
+        for t in range(self.time_steps):
+            
+            frame = self.random_state.poisson(self.base_lam, size=(self.rows, self.cols))
 
-        for (r, c) in self.hotspot_coords:
-            r_min, r_max = max(0, r-1), min(self.rows, r+2)
-            c_min, c_max = max(0, c-1), min(self.cols, c+2)
-            increment = np.random.randint(self.hotspot_intensity[0], self.hotspot_intensity[1])
-            self.data[:, r_min:r_max, c_min:c_max] += increment
+            
+            for (r, c, size) in self.hotspot_locations:
+                lam = self.random_state.randint(*self.hotspot_strength_range)
+                frame[r:r+size, c:c+size] += self.random_state.poisson(lam=lam, size=(size, size))
 
-        return self.data
+            
+            if self.noise_level > 0:
+                frame += self.random_state.poisson(self.noise_level, size=(self.rows, self.cols))
+
+            self.data[t] = frame
+
+        return self.data.astype(int)
+
+

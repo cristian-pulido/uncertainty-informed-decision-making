@@ -12,125 +12,124 @@ The main goal is to evaluate the predictive performance and uncertainty estimati
 
 ## 📂 Repository Structure
 
-uncertainty-hotspots \
-├── config.json # Global parameters for reproducibility \
-├── data/ \
-│ └── examples/  # Single example dataset for quick reference \
-├── notebooks/ # Notebooks for data generation and analysis \
-├── results/ # Analysis results (visualizations, metrics) \
-└── experiments/ # Specific experiment scripts or notebooks
+uncertainty-hotspots  
+├── config.json  # Global parameters for reproducibility  
+├── data/  
+│   └── examples/  # Single example dataset for quick reference  
+├── notebooks/  # Jupyter notebooks for each experimental step  
+├── results/  # Analysis results (visualizations, metrics, models)  
+└── experiments/  # Custom experiments or alternative evaluations
 
-
-- **External Data**: Large datasets and multiple simulations are stored outside the repository (`../uncertainty-informed-data/simulations/poisson/`).
+- **External Data**: Multiple simulations are stored outside the repo at `../uncertainty-informed-data/simulations/poisson/`.
 
 ---
 
 ## 🛠️ General Workflow Overview
 
-The workflow clearly consists of the following main steps:
+The methodology follows these main steps:
 
 ### 1. ⚙️ Configuration Setup
 
-- A global configuration file (`config.json`) defines all the main parameters for data generation, temporal partitions, and experimental setups.
-- Example parameters:
-  - Spatial grid: `40 x 40`
-  - Temporal length: `180 days (~6 months)`
-  - Train/calibration/test split defined by months.
-  - Number of simulations (`num_simulations`): defined outside the main config.
-  - Hotspot selection method: `"by_crimes"` or `"by_cells"`.
+- A global configuration file (`config.json`) controls key parameters:
+  - Grid size: `40 x 40`
+  - Time span: `180 days (~6 months)`
+  - Partitioning: train (3m), calibration (1m), test (2m)
+  - Hotspot coverage: `by_crimes` or `by_cells`
+  - Number of simulations: defined in `num_simulations`
 
 ### 2. 📌 Synthetic Data Generation
 
-We use a class-based approach (`SyntheticHotspots`) to generate synthetic crime hotspot data. The specific implementation (`PoissonHotspots`) uses a Poisson distribution, with stable hotspots clearly defined across the temporal range.
+- The base class `SyntheticHotspots` defines the interface.
+- The `PoissonHotspots` class generates spatial crime data with:
+  - Fixed spatial hotspots (intensity and size vary over time)
+  - Background noise and overlapping activity
+  - Multiple simulation sets for robustness analysis
 
-- An initial example dataset is generated locally for quick reference:
-  - `data/examples/poisson_example_40x40.csv`
+Data is stored in:
 
-- Multiple simulation datasets are generated externally for robustness testing:
-  - Stored externally at `../uncertainty-informed-data/simulations/poisson/`.
+- Local example: `data/examples/poisson_example_40x40.csv`
+- External simulations: `../uncertainty-informed-data/simulations/poisson/`
 
-### 3. 🗃️ Data Partitioning (Temporal Split)
+### 3. 🗃️ Data Partitioning
 
-The dataset is partitioned according to standard predictive policing scenarios:
+Temporal split aligned with real-world forecasting:
 
-- Training: e.g., `3 months`
-- Calibration: e.g., `1 month`
-- Testing: e.g., next `2 months` for evaluation.
+- Train: 3 months
+- Calibration: 1 month
+- Test: 2 months
+
+Split logic is modular and configurable.
 
 ### 4. 📐 Model Training and Evaluation
 
-We train multiple predictive models to forecast crime counts:
+We train and compare predictive models:
 
-- **Baseline Model:** DummyRegressor
-- **Advanced Model:** Poisson Regression (others planned)
+- **Naive Baseline:** per-cell mean (stationary)
+- **Poisson Regression:** fitted independently per cell
+- Models comply with assumptions required for Conformal Prediction (i.i.d.)
 
-Uncertainty-aware methods will be incorporated using **Conformal Prediction** (via MAPIE) in future steps.
+### 5. 📈 Evaluation Metrics
 
-### 5. 📈 Metrics for Evaluation
+We compute both traditional and spatial performance metrics:
 
-Model performance is evaluated using both traditional and spatial metrics:
+- **Numerical:** RMSE, MAE (per day, with mean and std)
+- **Spatial:**
+  - **PAI**: Predictive Accuracy Index
+  - **PEI**: Predictive Efficiency Index
+  - **PEI\***: Adjusted version using equal-area comparison
 
-- **Numerical:** RMSE, MAE
-- **Spatial:**  
-  - **PAI (Predictive Accuracy Index)**: measures hit rate vs. area.  
-  - **PEI (Predictive Efficiency Index)**: efficiency relative to an optimal hotspot.  
-  - **PEI\***: adjusted PEI assuming same area for prediction and optimal hotspot.
+All spatial metrics are also computed per timestep, then aggregated using mean and standard deviation to reflect variability and uncertainty over time. 
 
-Hotspot definitions are configurable:
-- By fixed percentage of spatial units (`"by_cells"`).
-- By percentage of predicted crime coverage (`"by_crimes"`).
+All metrics are computed under a single `hotspot_percentage` to ensure consistency across evaluation and visualization.
 
 ### 6. 📊 Visualization and Analysis
 
-We visualize spatial-temporal predictions, hotspot maps, uncertainty intervals (upcoming), and metric comparisons to assess model reliability and practical value for resource allocation.
+Visual outputs include:
+
+- Heatmaps of real and predicted counts
+- Daily and aggregate hotspot maps
+- Visual comparison across days (to highlight temporal variability)
+- Evaluation of static predictions vs. dynamic reality
 
 ---
 
-## 📅 Next Steps (planned)
+## 📅 Next Steps (Planned)
 
-- **Implement Conformal Prediction** (MAPIE) for interval estimation.
-- **Simulate interventions and behavior changes** to evaluate uncertainty shifts.
-- **Compare multiple predictive models**, including Random Forests and Poisson-based approaches.
-- **Explore use of Hawkes processes** as a baseline model for crime forecasting, without applying conformal prediction directly.
-- **Automate result visualization and metric aggregation**.
+- Incorporate **Conformal Prediction (MAPIE)** for interval estimation.
+- Introduce behavioral changes and interventions into the data.
+- Add additional predictive models (e.g., Random Forests).
+- Evaluate robustness of predictions under temporal drift.
+- Compare against models that violate i.i.d. (e.g., Hawkes) as non-conformal baselines.
 
 ---
 
 ## 📖 References and Resources
 
-- **MAPIE:** [https://github.com/scikit-learn-contrib/MAPIE](https://github.com/scikit-learn-contrib/MAPIE)
-- **Fundamental paper (Shafer & Vovk, 2008):** ["A tutorial on conformal prediction"](https://www.jmlr.org/papers/v9/shafer08a.html), Journal of Machine Learning Research.
-
----
+- **MAPIE:** [https://github.com/scikit-learn-contrib/MAPIE](https://github.com/scikit-learn-contrib/MAPIE)  
+- **Shafer & Vovk (2008):** ["A tutorial on conformal prediction"](https://www.jmlr.org/papers/v9/shafer08a.html)
 
 ---
 
 ## ⚠️ Limitations and Assumptions
 
-This repository and its current methodology rely on the following key assumptions:
+### 🔹 1. Exchangeability Assumption
 
-### 🔹 1. Data Interchangeability (i.i.d.)
+- CP methods assume i.i.d. data.
+- Models like Hawkes violate this assumption and are only used as baselines (no interval guarantees).
 
-The application of Conformal Prediction (via MAPIE) assumes that the data are exchangeable (i.i.d.). This assumption may not hold in real-world spatio-temporal crime data where dependencies across space or time are expected.
+### 🔹 2. Discrete Grid and Aggregation
 
-- As a result, models like **Hawkes processes**, which explicitly model temporal dependence and self-excitation, **are not suitable for direct use with standard conformal methods**.
-- These models can still be used for forecasting and baseline comparisons, but interval validity guarantees no longer apply.
+- All experiments assume a uniform grid.
+- No adjustment for population or heterogeneous cell sizes yet.
 
-### 🔹 2. Discrete Grid and Count Assumptions
+### 🔹 3. Fixed Resource Allocation
 
-- The system assumes a regular grid structure where each cell aggregates discrete crime counts.
-- It does not account (yet) for continuous space modeling, varying cell sizes, or population heterogeneity.
+- Hotspot evaluation is based on a fixed percentage of predicted crime.
+- More advanced patrol allocation logic is not yet implemented.
 
-### 🔹 3. Fixed Resource Assumptions in Hotspot Selection
+### 🔹 4. Synthetic vs. Real Data
 
-- Current hotspot evaluation uses fixed proportions of area or predicted crime (configurable).
-- Real-world deployments may require more complex resource allocation strategies or constraints (e.g., overlapping patrol zones, shift dynamics).
-
-### 🔹 4. Synthetic Data Generation
-
-- Initial experiments rely on simulated data (Poisson processes with static hotspots).
-- While this allows control and repeatability, real-world validation is still required for operational deployment.
+- Current results are based on simulations.
+- The framework is ready for future integration with real-world datasets.
 
 ---
-
-

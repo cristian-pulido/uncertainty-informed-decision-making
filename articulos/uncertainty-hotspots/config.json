@@ -3,8 +3,11 @@
         "rows": 40,
         "cols": 40,
         "time_steps": 180,
-        "hotspots_num": 5,
+        "hotspots_num": 20,
         "lam": 2,
+        "hotspot_strength_range": [5, 12],
+        "hotspot_size_range": [1, 3],
+        "noise_level": 0.2,
         "num_simulations": 5
     },
     "data_partition": {
@@ -14,7 +17,7 @@
         "time_granularity": "days"
     },
     "evaluation": {
-        "hotspot_percentage": 0.1,
+        "hotspot_percentage": 0.10,
         "hotspot_definition": "by_crimes"
         }
   }
