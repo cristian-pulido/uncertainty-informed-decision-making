@@ -64,3 +64,35 @@ def plot_hotspot_masks_over_days(mask_dict, ncols=4, figsize=(14, 8)):
 
     plt.tight_layout()
     plt.show()
+
+
+
+def plot_prediction_interval_map(pred, lower, upper, title="Prediction with Interval", cmap="YlOrRd", vmin=None, vmax=None):
+    """
+    Plot prediction, lower, and upper interval maps side by side.
+
+    Parameters:
+    - pred: 2D array, prediction mean
+    - lower: 2D array, lower bound
+    - upper: 2D array, upper bound
+    - title: str, global title for the figure
+    - cmap: colormap
+    - vmin, vmax: optional color scale bounds
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+    vmin = vmin if vmin is not None else min(pred.min(), lower.min(), upper.min())
+    vmax = vmax if vmax is not None else max(pred.max(), lower.max(), upper.max())
+
+    titles = ["Prediction", "Lower Bound", "Upper Bound"]
+    data = [pred, lower, upper]
+
+    for ax, arr, t in zip(axes, data, titles):
+        sns.heatmap(arr, cmap=cmap, cbar=True, ax=ax, vmin=vmin, vmax=vmax, square=True, linewidths=0.3, linecolor="gray")
+        ax.set_title(t)
+        ax.invert_yaxis()
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    plt.suptitle(title, fontsize=14)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()

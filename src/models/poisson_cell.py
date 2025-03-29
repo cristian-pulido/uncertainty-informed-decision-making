@@ -1,8 +1,8 @@
-# src/models/poisson_cell.py
 from sklearn.linear_model import PoissonRegressor
+from sklearn.base import BaseEstimator, RegressorMixin
 import numpy as np
 
-class PoissonPerCellModel:
+class PoissonPerCellModel(BaseEstimator, RegressorMixin):
     """
     Poisson regression model per spatial cell.
 
@@ -10,8 +10,8 @@ class PoissonPerCellModel:
     If use_timestep=False: uses intercept only (stationary model, CP-compatible).
     """
     def __init__(self, use_timestep=True):
-        self.models_ = {}  # (row, col) -> model
         self.use_timestep = use_timestep
+        self.models_ = {}  # (row, col) -> model
 
     def fit(self, X, y):
         for key in zip(X["row"], X["col"]):
@@ -29,6 +29,8 @@ class PoissonPerCellModel:
             model.fit(X_cell, y_cell)
             self.models_[(r, c)] = model
 
+        return self
+
     def predict(self, X):
         preds = []
         for row, col, t in zip(X["row"], X["col"], X["timestep"]):
@@ -43,3 +45,11 @@ class PoissonPerCellModel:
                 pred = 0.0
             preds.append(pred)
         return np.array(preds)
+
+    def get_params(self, deep=True):
+        return {"use_timestep": self.use_timestep}
+
+    def set_params(self, **params):
+        for key, value in params.items():
+            setattr(self, key, value)
+        return self
