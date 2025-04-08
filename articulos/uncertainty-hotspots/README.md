@@ -93,13 +93,42 @@ Visual outputs include:
 
 ---
 
+## 🔍 Conformal Prediction and Uncertainty Analysis
+
+### MAPIE Application to Naive Model
+
+- Applied **MAPIE** to generate **prediction intervals** for the naive model.
+- Computed **per-cell interval coverage** and **interval width**.
+- Visualized distributions using violin plots and joint KDE plots.
+
+### Metrics by Hotspot Category
+
+- Cells were categorized by their **hotspot presence**:
+  - Predicted only
+  - Ground truth only
+  - Both
+  - Neither
+
+- Compared **misscoverage** and **interval width** across categories.
+
+### Hotspot Confidence and Priority Mapping
+
+- Introduced a **cell-level confidence score** derived from prediction intervals.
+- Combined with **hotspot frequency** (percentage of times a cell is classified as a hotspot).
+- Defined a **Hotspot Priority Map**:
+  - **Priority:** frequent, high confidence
+  - **Critical:** frequent, low confidence
+  - **Monitoring :** infrequent, low confidence
+  - **Low Interest:** infrequent, high confidence
+
+---
+
 ## 📅 Next Steps (Planned)
 
-- Incorporate **Conformal Prediction (MAPIE)** for interval estimation.
-- Introduce behavioral changes and interventions into the data.
-- Add additional predictive models (e.g., Random Forests).
-- Evaluate robustness of predictions under temporal drift.
-- Compare against models that violate i.i.d. (e.g., Hawkes) as non-conformal baselines.
+- Evaluate additional models under CP (e.g., Random Forest, linear, hybrid spatial models)
+- Introduce behavioral changes or **interventions** (e.g., simulated policing)
+- Measure robustness under temporal drift
+- Use CP to guide **trust and decision-making** in deployment settings
 
 ---
 
@@ -133,3 +162,4 @@ Visual outputs include:
 - The framework is ready for future integration with real-world datasets.
 
 ---
+

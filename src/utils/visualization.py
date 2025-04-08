@@ -67,7 +67,7 @@ def plot_hotspot_masks_over_days(mask_dict, ncols=4, figsize=(14, 8)):
 
 
 
-def plot_prediction_interval_map(pred, lower, upper, title="Prediction with Interval", cmap="YlOrRd", vmin=None, vmax=None):
+def plot_prediction_interval_map(pred, lower, upper, title="Prediction with Interval", cmap="YlOrRd", vmin=None, vmax=None,titles = ["Prediction", "Lower Bound", "Upper Bound"]):
     """
     Plot prediction, lower, and upper interval maps side by side.
 
@@ -83,11 +83,10 @@ def plot_prediction_interval_map(pred, lower, upper, title="Prediction with Inte
     vmin = vmin if vmin is not None else min(pred.min(), lower.min(), upper.min())
     vmax = vmax if vmax is not None else max(pred.max(), lower.max(), upper.max())
 
-    titles = ["Prediction", "Lower Bound", "Upper Bound"]
     data = [pred, lower, upper]
 
     for ax, arr, t in zip(axes, data, titles):
-        sns.heatmap(arr, cmap=cmap, cbar=True, ax=ax, vmin=vmin, vmax=vmax, square=True, linewidths=0.3, linecolor="gray")
+        sns.heatmap(arr, cmap=cmap, cbar=True, ax=ax, vmin=vmin, vmax=vmax, square=True, linewidths=0, linecolor="gray")
         ax.set_title(t)
         ax.invert_yaxis()
         ax.set_xticks([])
@@ -95,4 +94,24 @@ def plot_prediction_interval_map(pred, lower, upper, title="Prediction with Inte
 
     plt.suptitle(title, fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+
+def plot_grid_map(grid, title="Grid Map", cmap="viridis", label="Value", vmin=None, vmax=None, figsize=(6, 5)):
+    """
+    Visualize a single 2D grid (e.g., coverage or interval width).
+
+    Parameters:
+    - grid: 2D array (rows x cols)
+    - title: str
+    - cmap: str
+    - label: str, label for the colorbar
+    - vmin, vmax: color limits
+    - figsize: tuple
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    cax = ax.imshow(grid, cmap=cmap, origin="lower", vmin=vmin, vmax=vmax)
+    ax.set_title(title)
+    ax.set_xlabel("X coordinate")
+    ax.set_ylabel("Y coordinate")
+    fig.colorbar(cax, ax=ax, label=label)
     plt.show()

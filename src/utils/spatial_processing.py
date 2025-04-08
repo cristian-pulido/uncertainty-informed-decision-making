@@ -1,36 +1,48 @@
 import numpy as np
 
-def predictions_to_grid(X, y_true, y_pred, grid_size):
+def predictions_to_grid(X, y_true, y_pred, grid_size, aggregate=True):
     """
     Convert predictions and true values into spatial grids.
-
+    
     Parameters
     ----------
-    X : pd.DataFrame or np.array
-        DataFrame or array with ["row", "col"] columns.
-
-    y_true : np.array or pd.Series
-        True target values.
-
-    y_pred : np.array or pd.Series
-        Predicted values.
-
+    X : pd.DataFrame
+        DataFrame with 'timestep', 'row', 'col' columns.
+    y_true : np.array
+    y_pred : np.array
     grid_size : tuple
-        Tuple (rows, cols) specifying the grid dimensions.
+        (rows, cols)
+    aggregate : bool
+        If True, sum across time. If False, return 3D grid [time, row, col].
 
     Returns
     -------
     grid_true, grid_pred : np.array
-        Spatial grids for true and predicted counts.
     """
-    grid_true = np.zeros(grid_size)
-    grid_pred = np.zeros(grid_size)
+    rows, cols = grid_size
+    timesteps = X["timestep"].nunique()
+    
+    if aggregate:
+        grid_true = np.zeros((rows, cols))
+        grid_pred = np.zeros((rows, cols))
+        for (_, row, col), yt, yp in zip(X[["row", "col"]].values, y_true, y_pred):
+            grid_true[row, col] += yt
+            grid_pred[row, col] += yp
+    else:
+        grid_true = np.zeros((timesteps, rows, cols))
+        grid_pred = np.zeros((timesteps, rows, cols))
+        # Reindex timesteps to start at 0
+        timestep_map = {t: i for i, t in enumerate(sorted(X["timestep"].unique()))}
+        X_local = X.copy()
+        X_local["timestep_idx"] = X["timestep"].map(timestep_map)
 
-    for (_, row, col), y_val, pred_val in zip(X.values, y_true, y_pred):
-        grid_true[row, col] += y_val
-        grid_pred[row, col] += pred_val
-        
+        for (t, row, col), yt, yp in zip(X_local[["timestep_idx", "row", "col"]].values, y_true, y_pred):
+            grid_true[t, row, col] = yt
+            grid_pred[t, row, col] = yp
+
     return grid_true, grid_pred
+
+
 
 def define_hotspot_by_cells(grid, hotspot_percentage):
     """
