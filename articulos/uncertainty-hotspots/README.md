@@ -110,16 +110,25 @@ Visual outputs include:
   - Neither
 
 - Compared **misscoverage** and **interval width** across categories.
+- Visualized joint and marginal distributions.
 
 ### Hotspot Confidence and Priority Mapping
 
-- Introduced a **cell-level confidence score** derived from prediction intervals.
-- Combined with **hotspot frequency** (percentage of times a cell is classified as a hotspot).
-- Defined a **Hotspot Priority Map**:
-  - **Priority:** frequent, high confidence
-  - **Critical:** frequent, low confidence
-  - **Monitoring :** infrequent, low confidence
-  - **Low Interest:** infrequent, high confidence
+- Introduced a **spatio-temporal confidence score** combining misscoverage and normalized interval width.
+- Confidence was defined as:
+
+```text
+Confidence = 1 - Misscoverage - λ × NormalizedIntervalWidth
+```
+
+- Combined confidence with hotspot **frequency** (based on true data) to classify cells:
+
+| Category        | Frequency | Confidence | Color    | Interpretation                                                                 |
+|----------------|-----------|-------------|----------|---------------------------------------------------------------------------------|
+| 🟥 Priority     | High      | High        | Red      | Active area with high model certainty → top priority for intervention.         |
+| 🟧 Critical     | High      | Low         | Orange   | Active area but uncertain → potential error or shifting hotspot.               |
+| 🟨 Monitoring   | Low       | Low         | Yellow   | Inactive but uncertain → monitor for potential reactivation.                   |
+| 🟩 Low Interest | Low       | High        | Green    | Calm area with high confidence → no immediate attention required.              |
 
 ---
 
@@ -162,4 +171,3 @@ Visual outputs include:
 - The framework is ready for future integration with real-world datasets.
 
 ---
-

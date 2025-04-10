@@ -1,46 +1,83 @@
 import numpy as np
+import pandas as pd
 
 def predictions_to_grid(X, y_true, y_pred, grid_size, aggregate=True):
     """
     Convert predictions and true values into spatial grids.
-    
+
     Parameters
     ----------
     X : pd.DataFrame
-        DataFrame with 'timestep', 'row', 'col' columns.
+        DataFrame with 'row', 'col' (and optionally 'timestep') columns.
     y_true : np.array
     y_pred : np.array
     grid_size : tuple
         (rows, cols)
     aggregate : bool
-        If True, sum across time. If False, return 3D grid [time, row, col].
+        If True, sum across time. If False and X has 'timestep', return 3D grid [time, row, col].
 
     Returns
     -------
     grid_true, grid_pred : np.array
     """
     rows, cols = grid_size
+    has_time = "timestep" in X.columns
+
+    if not has_time:
+        # No tiempo, crear 2D directamente
+        grid_true = np.zeros((rows, cols))
+        grid_pred = np.zeros((rows, cols))
+        for (row, col), yt, yp in zip(X[["row", "col"]].values, y_true, y_pred):
+            grid_true[int(row), int(col)] += yt
+            grid_pred[int(row), int(col)] += yp
+        return grid_true, grid_pred
+
+    # Si hay columna 'timestep'
     timesteps = X["timestep"].nunique()
-    
+
     if aggregate:
         grid_true = np.zeros((rows, cols))
         grid_pred = np.zeros((rows, cols))
         for (_, row, col), yt, yp in zip(X[["row", "col"]].values, y_true, y_pred):
-            grid_true[row, col] += yt
-            grid_pred[row, col] += yp
+            grid_true[int(row), int(col)] += yt
+            grid_pred[int(row), int(col)] += yp
     else:
         grid_true = np.zeros((timesteps, rows, cols))
         grid_pred = np.zeros((timesteps, rows, cols))
-        # Reindex timesteps to start at 0
+        # Reindex timesteps
         timestep_map = {t: i for i, t in enumerate(sorted(X["timestep"].unique()))}
         X_local = X.copy()
         X_local["timestep_idx"] = X["timestep"].map(timestep_map)
 
         for (t, row, col), yt, yp in zip(X_local[["timestep_idx", "row", "col"]].values, y_true, y_pred):
-            grid_true[t, row, col] = yt
-            grid_pred[t, row, col] = yp
+            grid_true[int(t), int(row), int(col)] = yt
+            grid_pred[int(t), int(row), int(col)] = yp
 
     return grid_true, grid_pred
+
+
+
+def grid3d_to_dataframe_with_index(grid, reference_X,name_colum):
+    """
+    Convierte un grid 3D a un DataFrame ordenado según reference_X.
+
+    Parameters:
+    - grid: np.ndarray (timesteps, rows, cols)
+    - reference_X: pd.DataFrame con columnas ['timestep', 'row', 'col']
+
+    Returns:
+    - pd.Series alineada con reference_X
+    """
+    # Reindexar los timesteps para que coincidan con el orden del grid
+    unique_timesteps = sorted(reference_X["timestep"].unique())
+    timestep_map = {t: i for i, t in enumerate(unique_timesteps)}
+
+    values = []
+    for t, r, c in reference_X[["timestep", "row", "col"]].values:
+        t_idx = timestep_map[t]
+        values.append(grid[int(t_idx), int(r), int(c)])
+    return pd.DataFrame(values, index=reference_X.index,columns=[name_colum])
+
 
 
 
