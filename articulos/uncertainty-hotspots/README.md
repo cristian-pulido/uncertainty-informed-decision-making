@@ -1,173 +1,155 @@
 # Uncertainty in Crime Hotspot Prediction
 
-This document provides a clear overview of the workflow and methodology applied in our study on uncertainty quantification for spatial-temporal crime hotspot prediction.
+This repository provides a complete experimental framework for evaluating crime hotspot prediction under uncertainty, combining synthetic simulations and real-world data from the city of Chicago.
 
 ---
 
 ## 🚩 Research Objective
 
-The main goal is to evaluate the predictive performance and uncertainty estimation of crime forecasting models, particularly in the presence of changes or interventions (e.g., police actions, social changes, or emergencies).
+Our main goal is to evaluate **predictive performance and uncertainty quantification** in spatial-temporal crime forecasting. We aim to support **risk-aware interventions** by producing interpretable metrics like **confidence**, **coverage**, and **priority scores** at the cell level.
 
 ---
 
 ## 📂 Repository Structure
 
-uncertainty-hotspots  
-├── config.json  # Global parameters for reproducibility  
-├── data/  
-│   └── examples/  # Single example dataset for quick reference  
-├── notebooks/  # Jupyter notebooks for each experimental step  
-├── results/  # Analysis results (visualizations, metrics, models)  
-└── experiments/  # Custom experiments or alternative evaluations
+```
+uncertainty-hotspots
+├── config.json                  # Global configuration
+├── data/                        # Local processed datasets (real and synthetic)
+│   └── real_data/Chicago/       # Preprocessed real crime data and metadata
+│   └── examples/                # Single example dataset for quick reference
+├── results/                     # Saved models, metrics, visualizations
+├── notebooks/                   # Jupyter notebooks for each experiment
+└── experiments/                 # Custom or extended experiments
+```
 
-- **External Data**: Multiple simulations are stored outside the repo at `../uncertainty-informed-data/simulations/poisson/`.
+> 🔎 **External Data** (not included): Real data is stored in  
+> `../uncertainty-informed-data/real_data/Chicago/`.
+> `../uncertainty-informed-data/simulations/poisson/`.
 
 ---
 
-## 🛠️ General Workflow Overview
-
-The methodology follows these main steps:
+## 🧠 General Workflow Overview
 
 ### 1. ⚙️ Configuration Setup
 
-- A global configuration file (`config.json`) controls key parameters:
-  - Grid size: `40 x 40`
-  - Time span: `180 days (~6 months)`
-  - Partitioning: train (3m), calibration (1m), test (2m)
-  - Hotspot coverage: `by_crimes` or `by_cells`
-  - Number of simulations: defined in `num_simulations`
-
-### 2. 📌 Synthetic Data Generation
-
-- The base class `SyntheticHotspots` defines the interface.
-- The `PoissonHotspots` class generates spatial crime data with:
-  - Fixed spatial hotspots (intensity and size vary over time)
-  - Background noise and overlapping activity
-  - Multiple simulation sets for robustness analysis
-
-Data is stored in:
-
-- Local example: `data/examples/poisson_example_40x40.csv`
-- External simulations: `../uncertainty-informed-data/simulations/poisson/`
-
-### 3. 🗃️ Data Partitioning
-
-Temporal split aligned with real-world forecasting:
-
-- Train: 3 months
-- Calibration: 1 month
-- Test: 2 months
-
-Split logic is modular and configurable.
-
-### 4. 📐 Model Training and Evaluation
-
-We train and compare predictive models:
-
-- **Naive Baseline:** per-cell mean (stationary)
-- **Poisson Regression:** fitted independently per cell
-- Models comply with assumptions required for Conformal Prediction (i.i.d.)
-
-### 5. 📈 Evaluation Metrics
-
-We compute both traditional and spatial performance metrics:
-
-- **Numerical:** RMSE, MAE (per day, with mean and std)
-- **Spatial:**
-  - **PAI**: Predictive Accuracy Index
-  - **PEI**: Predictive Efficiency Index
-  - **PEI\***: Adjusted version using equal-area comparison
-
-All spatial metrics are also computed per timestep, then aggregated using mean and standard deviation to reflect variability and uncertainty over time. 
-
-All metrics are computed under a single `hotspot_percentage` to ensure consistency across evaluation and visualization.
-
-### 6. 📊 Visualization and Analysis
-
-Visual outputs include:
-
-- Heatmaps of real and predicted counts
-- Daily and aggregate hotspot maps
-- Visual comparison across days (to highlight temporal variability)
-- Evaluation of static predictions vs. dynamic reality
+- Global parameters are defined in `config.json`:
+  - Grid size, partitions (train/calibration/test), hotspot definitions, etc.
+  - Used consistently across synthetic and real-world pipelines.
 
 ---
 
-## 🔍 Conformal Prediction and Uncertainty Analysis
+## 🔬 Experiments Overview
 
-### MAPIE Application to Naive Model
+### 📁 `01_preprocessing_real_data.ipynb`
 
-- Applied **MAPIE** to generate **prediction intervals** for the naive model.
-- Computed **per-cell interval coverage** and **interval width**.
-- Visualized distributions using violin plots and joint KDE plots.
+- Loads and cleans the official 2024 Chicago crime dataset.
+- Selects relevant crime types (e.g., `ASSAULT`, `ROBBERY`, `NARCOTICS`).
+- Maps police beats to a 2D grid using a reproducible spatial mapping.
+- Aggregates daily counts and exports a formatted dataset.
 
-### Metrics by Hotspot Category
+### 🧪 `02_model_naive_evaluation.ipynb`
 
-- Cells were categorized by their **hotspot presence**:
-  - Predicted only
-  - Ground truth only
-  - Both
-  - Neither
+- Trains a naive per-cell model (mean count) on the Chicago dataset.
+- Evaluates it on the test set using traditional spatial metrics:
+  - RMSE, MAE, PAI, PEI, PEI*
+- Produces baseline comparisons across different hotspot coverage levels.
 
-- Compared **misscoverage** and **interval width** across categories.
-- Visualized joint and marginal distributions.
+### 📊 `03_visual_comparison_predictions.ipynb`
 
-### Hotspot Confidence and Priority Mapping
+- Visualizes daily and average predictions vs. ground truth.
+- Highlights spatial variability in hotspot coverage.
+- Saves prediction masks and hotspots for future comparison.
 
-- Introduced a **spatio-temporal confidence score** combining misscoverage and normalized interval width.
-- Confidence was defined as:
+### 📐 `04_conformal_prediction_analysis.ipynb`
 
-```text
-Confidence = 1 - Misscoverage - λ × NormalizedIntervalWidth
+- Applies **MAPIE** (Conformal Prediction) to the naive model.
+- Computes per-cell prediction intervals.
+- Measures and visualizes:
+  - Interval width
+  - Misscoverage rate
+  - Confidence scores
+- Introduces a **Hotspot Priority Map**:
+  - Combines confidence and frequency into a **4-class taxonomy**.
+
+| Category        | Frequency | Confidence | Color    |
+|----------------|-----------|-------------|----------|
+| 🟥 Priority     | High      | High        | Red      |
+| 🟧 Critical     | High      | Low         | Orange   |
+| 🟨 Monitoring   | Low       | Low         | Yellow   |
+| 🟩 Low Interest | Low       | High        | Green    |
+
+- Visualizes sensitivity to confidence and frequency thresholds.
+- Stores intermediate results for further exploration.
+
+### 🧪 `05_evaluation_new_hotspots.ipynb`
+
+- Compares baseline hotspot predictions with **new prioritized hotspots**.
+- Computes PEI\* across multiple scenarios:
+  - Ground truth historical frequency
+  - Binary hotspot mask
+  - Continuous predicted intensity
+- Evaluates **sensitivity** of performance to thresholds in:
+  - Confidence
+  - Risk frequency
+- Produces visual summaries of PEI* trends under various configurations.
+
+---
+
+## 📦 Key Modules (src/)
+
+- `models/`: naive, poisson models per cell
+- `evaluation/`: metrics for CP, PAI/PEI, temporal/spatial evaluation
+- `conformal/`: wrapper for MAPIE and per-cell calibration
+- `utils/`: preprocessing, grid transforms, plotting
+
+---
+
+## 🔍 Uncertainty-Aware Hotspot Prioritization
+
+We define **spatio-temporal confidence** per cell:
+
+```
+Confidence(t,r,c) = 1 − NormalizedIntervalWidth(t,r,c)
 ```
 
-- Combined confidence with hotspot **frequency** (based on true data) to classify cells:
+This score enables **real-time prioritization**, even without future labels.
 
-| Category        | Frequency | Confidence | Color    | Interpretation                                                                 |
-|----------------|-----------|-------------|----------|---------------------------------------------------------------------------------|
-| 🟥 Priority     | High      | High        | Red      | Active area with high model certainty → top priority for intervention.         |
-| 🟧 Critical     | High      | Low         | Orange   | Active area but uncertain → potential error or shifting hotspot.               |
-| 🟨 Monitoring   | Low       | Low         | Yellow   | Inactive but uncertain → monitor for potential reactivation.                   |
-| 🟩 Low Interest | Low       | High        | Green    | Calm area with high confidence → no immediate attention required.              |
+Using both **confidence** and **frequency**, cells are classified into four categories that support operational decision-making.
 
 ---
 
-## 📅 Next Steps (Planned)
+## 📈 Metrics
 
-- Evaluate additional models under CP (e.g., Random Forest, linear, hybrid spatial models)
-- Introduce behavioral changes or **interventions** (e.g., simulated policing)
-- Measure robustness under temporal drift
-- Use CP to guide **trust and decision-making** in deployment settings
+We evaluate:
+
+- **Per-day RMSE/MAE** with std. deviation
+- **PAI**, **PEI**, and **PEI*** with varying coverage thresholds
+- **Misscoverage** and **Interval Width** per cell
+- **Sensitivity to threshold values** in priority mapping
 
 ---
 
-## 📖 References and Resources
+## 📖 References
 
 - **MAPIE:** [https://github.com/scikit-learn-contrib/MAPIE](https://github.com/scikit-learn-contrib/MAPIE)  
-- **Shafer & Vovk (2008):** ["A tutorial on conformal prediction"](https://www.jmlr.org/papers/v9/shafer08a.html)
+- Shafer & Vovk (2008): ["A tutorial on conformal prediction"](https://www.jmlr.org/papers/v9/shafer08a.html)
 
 ---
 
-## ⚠️ Limitations and Assumptions
+## 🚧 Limitations and Future Work
 
-### 🔹 1. Exchangeability Assumption
-
-- CP methods assume i.i.d. data.
-- Models like Hawkes violate this assumption and are only used as baselines (no interval guarantees).
-
-### 🔹 2. Discrete Grid and Aggregation
-
-- All experiments assume a uniform grid.
-- No adjustment for population or heterogeneous cell sizes yet.
-
-### 🔹 3. Fixed Resource Allocation
-
-- Hotspot evaluation is based on a fixed percentage of predicted crime.
-- More advanced patrol allocation logic is not yet implemented.
-
-### 🔹 4. Synthetic vs. Real Data
-
-- Current results are based on simulations.
-- The framework is ready for future integration with real-world datasets.
+- Assumes i.i.d. (CP requirement), doesn't model cascading events (e.g., SEPP).
+- Hotspot allocation uses fixed percentage; dynamic patrol simulation is future work.
+- Real data uses uniform grid over beats; no population normalization yet.
 
 ---
+
+## ✅ Status
+
+✔️ Full pipeline implemented for real data  
+✔️ Modular structure, reproducible experiments  
+✔️ Integration of conformal prediction and risk-based prioritization  
+⬜ Integration with additional ML models  
+⬜ Longitudinal drift evaluation  
+⬜ Deployment-ready dashboard
