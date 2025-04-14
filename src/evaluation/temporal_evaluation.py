@@ -25,18 +25,65 @@ def evaluate_temporal_rmse_mae(X_test, y_test, y_pred):
         "per_timestep": df_result
     }
 
-def evaluate_temporal_spatial_metrics(X_test, y_test, y_pred, grid_size, hotspot_percentage):
+def evaluate_temporal_spatial_metrics(
+    X_test, 
+    y_test, 
+    y_pred, 
+    grid_size, 
+    hotspot_percentage,
+    hotspot_masks_pred=None,
+):
+    """
+    Evaluate spatial-temporal metrics (PAI, PEI, PEI*) optionally using provided hotspot masks.
+
+    Parameters
+    ----------
+    X_test : pd.DataFrame
+        DataFrame containing "timestep", "row", "col" columns.
+    y_test : array-like
+        True values.
+    y_pred : array-like
+        Predicted values.
+    grid_size : tuple
+        Tuple of grid dimensions (rows, cols).
+    hotspot_percentage : float
+        Percentage of crimes to define hotspots.
+    hotspot_masks_pred : list of np.ndarray (bool), optional
+        Precomputed hotspot masks for each timestep. If None, hotspots are computed internally.
+
+    Returns
+    -------
+    dict
+        Dictionary with mean and std of PAI, PEI, PEI*, and results per timestep.
+    """
     df = pd.DataFrame(X_test).copy()
     df["y_true"] = y_test
     df["y_pred"] = y_pred
 
     results = []
-    for t, group in df.groupby("timestep"):
+    timesteps = sorted(df["timestep"].unique())
+
+    
+
+    for idx, t in enumerate(timesteps):
+        group = df[df["timestep"] == t]
         grid_true, grid_pred = predictions_to_grid(
-            group[["timestep", "row", "col"]], group["y_true"], group["y_pred"], grid_size
+            group[["row", "col"]],
+            group["y_true"],
+            group["y_pred"],
+            grid_size,
+            aggregate=False,
         )
 
-        mask_pred = define_hotspot_by_crimes(grid_pred, hotspot_percentage)
+        # If hotspot masks are provided, use them directly
+        if hotspot_masks_pred is not None:
+            mask_pred = hotspot_masks_pred
+        else:
+            mask_pred = define_hotspot_by_crimes(grid_pred, hotspot_percentage)
+
+       
+
+        # Optimal hotspot from true data always computed internally
         mask_opt = define_hotspot_by_crimes(grid_true, hotspot_percentage)
 
         results.append({
@@ -56,6 +103,7 @@ def evaluate_temporal_spatial_metrics(X_test, y_test, y_pred, grid_size, hotspot
         "pei_star_std": df_result["pei_star"].std(),
         "per_timestep": df_result
     }
+
 
 def evaluate_spatial_metrics_over_coverages(X_test, y_test, y_pred, grid_size, coverages):
     results = []

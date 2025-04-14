@@ -43,35 +43,61 @@ def classify_temporal_hotspots(grid_true, grid_pred, hotspot_percentage):
     return df_metrics
 
 
-def hotspot_priority(freq_grid, conf_grid, freq_thresh=0.25, conf_thresh=0.75):
+def hotspot_priority(
+    conf_grid,
+    base_grid,
+    base_type="frequency",  # {"frequency", "binary", "continuous"}
+    freq_thresh=0.25,
+    conf_thresh=0.75
+):
     """
-    Classify grid cells based on hotspot frequency and prediction confidence.
+    Classify grid cells based on confidence and either frequency, binary prediction, or predicted crime magnitude.
 
     Parameters:
-    - freq_grid: 2D array with normalized hotspot frequency per cell (0 to 1)
-    - conf_grid: 2D array with confidence values per cell (0 to 1)
-    - freq_thresh: threshold for high hotspot frequency (default=0.25)
-    - conf_thresh: threshold for high confidence (default=0.75)
+    - conf_grid: np.ndarray (R x C), confidence per cell in [0,1]
+    - base_grid: np.ndarray (R x C)
+        - If base_type="frequency", this is a normalized frequency [0,1]
+        - If base_type="binary", this is a boolean hotspot prediction mask
+        - If base_type="continuous", this is raw predicted crime counts (will be normalized)
+    - base_type: str, one of {"frequency", "binary", "continuous"}
+    - freq_thresh: float, threshold to consider high frequency / high prediction (default 0.25)
+    - conf_thresh: float, threshold to consider high confidence (default 0.75)
 
     Returns:
-    - category_grid: 2D array with integer codes representing the cell category
-    - legend: dictionary mapping code -> human-readable description
+    - category_grid: np.ndarray (R x C), integer code:
+        0: Priority
+        1: Critical
+        2: Under Surveillance
+        3: Low Interest
+    - legend: dict of int → label
     """
-    category_grid = np.zeros_like(freq_grid)
 
-    high_freq = freq_grid >= freq_thresh
+    if base_type == "frequency":
+        high_risk = base_grid >= freq_thresh
+
+    elif base_type == "binary":
+        high_risk = base_grid.astype(bool)
+
+    elif base_type == "continuous":
+        norm_pred = (base_grid - base_grid.min()) / (base_grid.max() - base_grid.min())
+        high_risk = norm_pred >= freq_thresh
+
+    else:
+        raise ValueError("Invalid base_type. Choose from 'frequency', 'binary', or 'continuous'.")
+
     high_conf = conf_grid >= conf_thresh
 
-    category_grid[np.where(high_freq & high_conf)] = 0  # Priority
-    category_grid[np.where(high_freq & ~high_conf)] = 1  # Critical
-    category_grid[np.where(~high_freq & ~high_conf)] = 2  # Under Surveillance
-    category_grid[np.where(~high_freq & high_conf)] = 3  # Low Interest
+    category_grid = np.zeros_like(conf_grid, dtype=int)
+    category_grid[np.where(high_risk & high_conf)] = 0  # Priority
+    category_grid[np.where(high_risk & ~high_conf)] = 1  # Critical
+    category_grid[np.where(~high_risk & ~high_conf)] = 2  # Under Surveillance
+    category_grid[np.where(~high_risk & high_conf)] = 3  # Low Interest
 
     legend = {
-        0: "Priority (frequent, high confidence)",
-        1: "Critical (frequent, low confidence)",
-        2: "Under Surveillance (infrequent, low confidence)",
-        3: "Low Interest (infrequent, high confidence)"
+        0: "Priority (high risk, high confidence)",
+        1: "Critical (high risk, low confidence)",
+        2: "Under Surveillance (low risk, low confidence)",
+        3: "Low Interest (low risk, high confidence)"
     }
 
     return category_grid, legend

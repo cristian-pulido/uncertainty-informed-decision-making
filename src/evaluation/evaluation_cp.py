@@ -7,38 +7,76 @@ from src.utils.spatial_processing import grid3d_to_dataframe_with_index, predict
 
 def compute_misscoverage_per_cell(y_true_grid, y_min_grid, y_max_grid, reference_X):
     """
-    Compute a per-sample misscoverage flag (1 if the true value is NOT within the predicted interval).
+    Compute per-sample interval errors: both a binary misscoverage flag and the distance to the interval bounds
+    when the true value lies outside the predicted interval.
 
-    Parameters:
-    - y_true_grid: np.ndarray of shape (T, R, C), true values in 3D spatial-temporal format
-    - y_min_grid: np.ndarray of shape (R, C), lower bound of prediction interval
-    - y_max_grid: np.ndarray of shape (R, C), upper bound of prediction interval
-    - reference_X: pd.DataFrame with original row, col, timestep, and index structure
+    Parameters
+    ----------
+    y_true_grid : np.ndarray of shape (T, R, C)
+        Ground truth values for each timestep and spatial cell.
 
-    Returns:
-    - pd.DataFrame with same index as reference_X and a new column 'not_in_interval' (0 or 1)
+    y_min_grid : np.ndarray of shape (R, C)
+        Lower bound of the prediction interval (constant over time).
+
+    y_max_grid : np.ndarray of shape (R, C)
+        Upper bound of the prediction interval (constant over time).
+
+    reference_X : pd.DataFrame
+        DataFrame with 'timestep', 'row', and 'col' columns, used to align the resulting DataFrame with the original input.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame aligned with reference_X that includes:
+        - 'not_in_interval' : 1 if the true value lies outside the interval, 0 otherwise.
+        - 'distance_to_interval' : distance from the true value to the closest bound when outside the interval (0 if inside).
     """
+
     n_in_interval = ~((y_true_grid >= y_min_grid) & (y_true_grid <= y_max_grid))
-    df = grid3d_to_dataframe_with_index(n_in_interval, reference_X, "not_in_interval")
-    return pd.merge(reference_X, df, left_index=True, right_index=True)
+    df1 = grid3d_to_dataframe_with_index(n_in_interval, reference_X, "not_in_interval")
+
+    error = np.zeros_like(n_in_interval).astype(float)
+
+    error[(y_min_grid - y_true_grid) > 0]+=(y_min_grid-y_true_grid)[(y_min_grid - y_true_grid) > 0]
+    error[(y_max_grid - y_true_grid) < 0]+=(y_true_grid-y_max_grid)[(y_max_grid - y_true_grid) < 0]
+    df2 = grid3d_to_dataframe_with_index(error, reference_X, "distance_to_interval")
+
+    return pd.concat([reference_X,df1,df2],axis=1)
 
 
-def compute_overall_misscoverge(miss_covergare):
+def compute_overall_misscoverage(miss_coverage):
     """
-    Aggregate per-sample misscoverage into per-cell and overall metrics.
+    Aggregate per-sample misscoverage and interval error distance into per-cell and overall metrics.
 
-    Parameters:
-    - miss_covergare: pd.DataFrame with columns ['row', 'col', 'not_in_interval']
+    Parameters
+    ----------
+    miss_coverage : pd.DataFrame
+        DataFrame containing at least the following columns:
+        - 'row', 'col': spatial coordinates
+        - 'not_in_interval': binary flag (1 if outside interval, 0 otherwise)
+        - 'distance_to_interval': float, distance to nearest bound (0 if inside)
 
-    Returns:
-    - misscoverage_grid: np.ndarray of shape (R, C), average misscoverage per cell
-    - overall_m_coverage: float, overall mean misscoverage
-    - std_m_coverage: float, overall std deviation of misscoverage
+    Returns
+    -------
+    misscoverage_grid : np.ndarray
+        Grid of average misscoverage per cell.
+
+    overall_m_coverage : float
+        Overall mean misscoverage across all cells and timesteps.
+
+    std_m_coverage : float
+        Standard deviation of misscoverage across all samples.
+
+    avg_error_outside : float
+        Mean distance to interval, considering only samples outside the interval.
+
+    std_error_outside : float
+        Standard deviation of the distance to interval for outside samples.
     """
-    grid_size = np.array(miss_covergare[["row", "col"]].max()) + 1
+    grid_size = np.array(miss_coverage[["row", "col"]].max()) + 1
 
-    group_time = miss_covergare.groupby(["row", "col"]).agg({"not_in_interval": "mean"}).reset_index()
-
+    # Compute misscoverage grid
+    group_time = miss_coverage.groupby(["row", "col"]).agg({"not_in_interval": "mean"}).reset_index()
     misscoverage_grid, _ = predictions_to_grid(
         group_time,
         group_time["not_in_interval"].values,
@@ -47,11 +85,22 @@ def compute_overall_misscoverge(miss_covergare):
         aggregate=False
     )
 
-    overall_m_coverage = miss_covergare["not_in_interval"].mean()
-    std_m_coverage = miss_covergare["not_in_interval"].std()
+    # Overall misscoverage
+    overall_m_coverage = miss_coverage["not_in_interval"].mean()
+    std_m_coverage = miss_coverage["not_in_interval"].std()
 
-    return misscoverage_grid, overall_m_coverage, std_m_coverage
+    # Distance to interval (only when outside)
+    outside = miss_coverage[miss_coverage["not_in_interval"] == 1]
+    avg_error_outside = outside["distance_to_interval"].mean()
+    std_error_outside = outside["distance_to_interval"].std()
 
+    return (
+        misscoverage_grid,
+        overall_m_coverage,
+        std_m_coverage,
+        avg_error_outside,
+        std_error_outside
+    )
 
 
 def compute_interval_width_per_sample(y_min_grid, y_max_grid, reference_X):
@@ -101,28 +150,30 @@ def compute_overall_interval_width(interval_df):
     return width_grid, overall_width, std_width
 
 
-def compute_spatiotemporal_confidence(df_metrics, lambda_param=0.5):
+def compute_spatiotemporal_confidence(df_metrics):
     """
-    Compute a per-cell, per-time confidence score based on interval width and coverage.
+    Compute a per-cell, per-time confidence score based only on the predicted interval width.
+
+    This function is suitable for real-world deployment, where ground truth values are not available.
 
     Parameters:
     - df_metrics: pd.DataFrame with columns:
-        ["timestep", "row", "col", "Interval Width", "Outside Interval"]
-    - lambda_param: float, trade-off between width and coverage
+        ["timestep", "row", "col", "Interval Width"]
 
     Returns:
     - df_confidence: pd.DataFrame with added 'Confidence' column
+        Confidence is defined as 1 - normalized_interval_width ∈ [0, 1]
     """
 
     df = df_metrics.copy()
 
-    # Normalize interval width (relative scale)
+    # Normalize interval width
     width_min = df["Interval Width"].min()
     width_max = df["Interval Width"].max()
-    df["width_norm"] = (df["Interval Width"] - width_min) / (width_max - width_min)
+    df["width_norm"] = (df["Interval Width"] - width_min) / (width_max - width_min + 1e-8)
 
-    # Compute confidence score: 1 = full confidence, 0 = no confidence
-    df["Confidence"] = 1 - df["Outside Interval"].astype(float) - lambda_param * df["width_norm"]
+    # Confidence purely from interval width
+    df["Confidence"] = 1 - df["width_norm"]
     df["Confidence"] = df["Confidence"].clip(lower=0.0, upper=1.0)
 
     return df

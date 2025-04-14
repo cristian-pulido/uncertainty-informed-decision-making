@@ -106,10 +106,10 @@ def define_hotspot_by_cells(grid, hotspot_percentage):
     return mask
 
 
-def define_hotspot_by_crimes(grid, crime_coverage_target=0.1):
+def define_hotspot_by_crimes(grid, crime_coverage_target=0.1, priority_grid=None):
     """
-    Generate a binary hotspot mask that selects the minimum number of cells
-    whose predicted values cover at least a given percentage of total predicted crimes.
+    Generate a binary hotspot mask selecting cells that cover at least a target percentage
+    of total crimes. Optionally prioritize selection based on a priority grid.
 
     Parameters
     ----------
@@ -118,36 +118,75 @@ def define_hotspot_by_crimes(grid, crime_coverage_target=0.1):
 
     crime_coverage_target : float
         Proportion (between 0 and 1) of total crimes that the hotspot area should capture.
-        For example, 0.1 means the hotspot should include cells covering at least 10% of predicted crimes.
+
+    priority_grid : np.ndarray, optional
+        2D array (same shape) of integers representing cell priority (lower = higher priority).
+        If provided, cells are first sorted by priority, then by predicted crime within each priority.
 
     Returns
     -------
-    hotspot_mask : np.ndarray (bool)
-        Binary mask (same shape as input grid) with True in hotspot cells
-        that together sum to at least the specified percentage of total crimes.
-    
-    Notes
-    -----
-    - If multiple cells have the same predicted value around the threshold,
-      the selection is based on order of appearance in the flattened array.
-    - The function assumes non-negative values in the grid.
+    hotspot_mask : np.ndarray of bool
+        Binary mask with True in hotspot cells covering the target percentage of crimes.
     """
     total_crimes = grid.sum()
     if total_crimes == 0:
         return np.zeros_like(grid, dtype=bool)
 
-    # Flatten and sort grid values in descending order
-    sorted_indices = np.argsort(grid.flatten())[::-1]
-    sorted_values = grid.flatten()[sorted_indices]
-    cumulative_sum = np.cumsum(sorted_values)
+    flat_grid = grid.flatten()
 
-    # Determine how many top cells are needed to reach the desired crime coverage
+    if priority_grid is not None:
+        flat_priority = priority_grid.flatten()
+        dtype = [("priority", int), ("crime", float)]
+        structured = np.array(list(zip(flat_priority, -flat_grid)), dtype=dtype)
+        sorted_indices = np.argsort(structured, order=["priority", "crime"])
+    else:
+        sorted_indices = np.argsort(flat_grid)[::-1]  # Descending
+
+    sorted_values = flat_grid[sorted_indices]
+    cumulative_sum = np.cumsum(sorted_values)
     threshold = total_crimes * crime_coverage_target
     num_cells = np.searchsorted(cumulative_sum, threshold) + 1
 
-    # Create binary hotspot mask
-    hotspot_mask = np.zeros_like(grid, dtype=bool)
-    hotspot_coords = np.unravel_index(sorted_indices[:num_cells], grid.shape)
-    hotspot_mask[hotspot_coords] = True
+    hotspot_mask = np.zeros_like(flat_grid, dtype=bool)
+    hotspot_mask[sorted_indices[:num_cells]] = True
 
-    return hotspot_mask
+    return hotspot_mask.reshape(grid.shape)
+
+
+def grid_to_dataframe(grid, beat_to_coord_map, value_name="value"):
+    """
+    Convert a 2D or 3D grid to a DataFrame with (timestep), row, col and beat identifiers.
+
+    Parameters:
+    - grid: np.ndarray, either (rows, cols) or (timesteps, rows, cols)
+    - beat_to_coord_map: dict mapping (row, col) -> beat_id
+    - value_name: str, name of the value column
+
+    Returns:
+    - df: pd.DataFrame with columns ['timestep' (if 3D), 'row', 'col', 'beat', value_name]
+    """
+    if grid.ndim == 2:
+        rows, cols = grid.shape
+        timestep_dim = False
+        coords = [(r, c) for r in range(rows) for c in range(cols)]
+        data = [grid[r, c] for r, c in coords]
+    elif grid.ndim == 3:
+        timesteps, rows, cols = grid.shape
+        timestep_dim = True
+        coords = [(t, r, c) for t in range(timesteps) for r in range(rows) for c in range(cols)]
+        data = [grid[t, r, c] for t, r, c in coords]
+    else:
+        raise ValueError("Grid must be 2D or 3D.")
+
+    # Build DataFrame
+    if timestep_dim:
+        df = pd.DataFrame(coords, columns=["timestep", "row", "col"])
+    else:
+        df = pd.DataFrame(coords, columns=["row", "col"])
+
+    df[value_name] = data
+
+    # Add beat column from mapping
+    df["beat"] = df[["row", "col"]].apply(lambda x: beat_to_coord_map.get((x[0], x[1]), None), axis=1)
+    
+    return df
