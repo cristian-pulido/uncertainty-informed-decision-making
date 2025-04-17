@@ -5,9 +5,9 @@ import os
 import pandas as pd
 from src.utils.spatial_processing import grid3d_to_dataframe_with_index, predictions_to_grid
 
-def compute_misscoverage_per_cell(y_true_grid, y_min_grid, y_max_grid, reference_X):
+def compute_miscoverage_per_cell(y_true_grid, y_min_grid, y_max_grid, reference_X):
     """
-    Compute per-sample interval errors: both a binary misscoverage flag and the distance to the interval bounds
+    Compute per-sample interval errors: both a binary miscoverage flag and the distance to the interval bounds
     when the true value lies outside the predicted interval.
 
     Parameters
@@ -44,13 +44,13 @@ def compute_misscoverage_per_cell(y_true_grid, y_min_grid, y_max_grid, reference
     return pd.concat([reference_X,df1,df2],axis=1)
 
 
-def compute_overall_misscoverage(miss_coverage):
+def compute_overall_miscoverage(miscoverage):
     """
-    Aggregate per-sample misscoverage and interval error distance into per-cell and overall metrics.
+    Aggregate per-sample miscoverage and interval error distance into per-cell and overall metrics.
 
     Parameters
     ----------
-    miss_coverage : pd.DataFrame
+    miscoverage : pd.DataFrame
         DataFrame containing at least the following columns:
         - 'row', 'col': spatial coordinates
         - 'not_in_interval': binary flag (1 if outside interval, 0 otherwise)
@@ -58,14 +58,14 @@ def compute_overall_misscoverage(miss_coverage):
 
     Returns
     -------
-    misscoverage_grid : np.ndarray
-        Grid of average misscoverage per cell.
+    miscoverage_grid : np.ndarray
+        Grid of average miscoverage per cell.
 
     overall_m_coverage : float
-        Overall mean misscoverage across all cells and timesteps.
+        Overall mean miscoverage across all cells and timesteps.
 
     std_m_coverage : float
-        Standard deviation of misscoverage across all samples.
+        Standard deviation of miscoverage across all samples.
 
     avg_error_outside : float
         Mean distance to interval, considering only samples outside the interval.
@@ -73,11 +73,11 @@ def compute_overall_misscoverage(miss_coverage):
     std_error_outside : float
         Standard deviation of the distance to interval for outside samples.
     """
-    grid_size = np.array(miss_coverage[["row", "col"]].max()) + 1
+    grid_size = np.array(miscoverage[["row", "col"]].max()) + 1
 
-    # Compute misscoverage grid
-    group_time = miss_coverage.groupby(["row", "col"]).agg({"not_in_interval": "mean"}).reset_index()
-    misscoverage_grid, _ = predictions_to_grid(
+    # Compute miscoverage grid
+    group_time = miscoverage.groupby(["row", "col"]).agg({"not_in_interval": "mean"}).reset_index()
+    miscoverage_grid, _ = predictions_to_grid(
         group_time,
         group_time["not_in_interval"].values,
         group_time["not_in_interval"].values,
@@ -85,17 +85,17 @@ def compute_overall_misscoverage(miss_coverage):
         aggregate=False
     )
 
-    # Overall misscoverage
-    overall_m_coverage = miss_coverage["not_in_interval"].mean()
-    std_m_coverage = miss_coverage["not_in_interval"].std()
+    # Overall miscoverage
+    overall_m_coverage = miscoverage["not_in_interval"].mean()
+    std_m_coverage = miscoverage["not_in_interval"].std()
 
     # Distance to interval (only when outside)
-    outside = miss_coverage[miss_coverage["not_in_interval"] == 1]
+    outside = miscoverage[miscoverage["not_in_interval"] == 1]
     avg_error_outside = outside["distance_to_interval"].mean()
     std_error_outside = outside["distance_to_interval"].std()
 
     return (
-        misscoverage_grid,
+        miscoverage_grid,
         overall_m_coverage,
         std_m_coverage,
         avg_error_outside,

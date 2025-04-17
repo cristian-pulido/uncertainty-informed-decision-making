@@ -41,33 +41,33 @@ uncertainty-hotspots
 
 ## 🔬 Experiments Overview
 
-### 📁 `01_preprocessing_real_data.ipynb`
+### 📁 `01_preprocessing.ipynb`
 
 - Loads and cleans the official 2024 Chicago crime dataset.
 - Selects relevant crime types (e.g., `ASSAULT`, `ROBBERY`, `NARCOTICS`).
 - Maps police beats to a 2D grid using a reproducible spatial mapping.
 - Aggregates daily counts and exports a formatted dataset.
 
-### 🧪 `02_model_naive_evaluation.ipynb`
+### 🧪 `02_model_Real_chicago.ipynb`
 
 - Trains a naive per-cell model (mean count) on the Chicago dataset.
-- Evaluates it on the test set using traditional spatial metrics:
+- Evaluates it on the test set using traditional spatio-temporal metrics:
   - RMSE, MAE, PAI, PEI, PEI*
 - Produces baseline comparisons across different hotspot coverage levels.
 
-### 📊 `03_visual_comparison_predictions.ipynb`
+### 📊 `03_visualize_hotspots.ipynb`
 
 - Visualizes daily and average predictions vs. ground truth.
 - Highlights spatial variability in hotspot coverage.
 - Saves prediction masks and hotspots for future comparison.
 
-### 📐 `04_conformal_prediction_analysis.ipynb`
+### 📐 `04_uncertainty_analiysis.ipynb`
 
 - Applies **MAPIE** (Conformal Prediction) to the naive model.
 - Computes per-cell prediction intervals.
 - Measures and visualizes:
   - Interval width
-  - Misscoverage rate
+  - Miscoverage rate
   - Confidence scores
 - Introduces a **Hotspot Priority Map**:
   - Combines confidence and frequency into a **4-class taxonomy**.
@@ -82,7 +82,7 @@ uncertainty-hotspots
 - Visualizes sensitivity to confidence and frequency thresholds.
 - Stores intermediate results for further exploration.
 
-### 🧪 `05_evaluation_new_hotspots.ipynb`
+### 🧪 `05_evaluate_new_hotspots.ipynb`
 
 - Compares baseline hotspot predictions with **new prioritized hotspots**.
 - Computes PEI\* across multiple scenarios:
@@ -125,7 +125,7 @@ We evaluate:
 
 - **Per-day RMSE/MAE** with std. deviation
 - **PAI**, **PEI**, and **PEI*** with varying coverage thresholds
-- **Misscoverage** and **Interval Width** per cell
+- **Miscoverage** and **Interval Width** per cell
 - **Sensitivity to threshold values** in priority mapping
 
 ---
