@@ -94,10 +94,10 @@ def hotspot_priority(
     category_grid[np.where(~high_risk & high_conf)] = 3  # Low Interest
 
     legend = {
-        0: "Priority (high risk, high confidence)",
-        1: "Critical (high risk, low confidence)",
-        2: "Under Surveillance (low risk, low confidence)",
-        3: "Low Interest (low risk, high confidence)"
+        0: "Priority (high crime, high confidence)",
+        1: "Critical (high crime, low confidence)",
+        2: "Under Surveillance (low crime, low confidence)",
+        3: "Low Interest (low crime, high confidence)"
     }
 
     return category_grid, legend

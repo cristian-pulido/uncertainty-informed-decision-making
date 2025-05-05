@@ -2,7 +2,7 @@
     "data_generation": {
         "rows": 40,
         "cols": 40,
-        "time_steps": 180,
+        "time_steps": 360,
         "hotspots_num": 20,
         "lam": 2,
         "hotspot_strength_range": [5, 12],
@@ -11,9 +11,9 @@
         "num_simulations": 5
     },
     "data_partition": {
-        "train_months": 3,
-        "calibration_months": 1,
-        "test_months": 2,
+        "train_months": 6,
+        "calibration_months": 3,
+        "test_months": 3,
         "time_granularity": "days"
     },
     "evaluation": {
