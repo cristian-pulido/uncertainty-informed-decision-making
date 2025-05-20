@@ -13,16 +13,16 @@ Each spatial unit is assigned to one of four action categories:
 ## 🔧 Method Pipeline
 
 
-<p align="center"> <img src="results/figures/Schematic_model.png" width="50%"> </p>
+<p align="center"> <img src="results/figures/Schematic_model.png" width="70%"> </p>
 
 > The framework starts with historical crime data, applies a simple forecast model, calibrates Conformal Prediction intervals, and classifies zones by combining confidence and crime indicators.
 
 ## 🗺️ Priority Maps
-<p align="center"> <img src="results/figures/priority_maps.png" width="60%"> </p>
+<p align="center"> <img src="results/figures/priority_maps.png" width="90%"> </p>
 
 ## 📊 Sensitivity Analysis
 
-<p align="center"> <img src="results/figures/sensitivity.png" width="40%"> </p>
+<p align="center"> <img src="results/figures/sensitivity.png" width="60%"> </p>
 
 > Effect of varying thresholds for crime and confidence scores.  
 > Higher confidence filters (solid lines) consistently improve prioritization performance (PEI*).
@@ -31,9 +31,9 @@ Each spatial unit is assigned to one of four action categories:
 
 | Metric Type | Visualization |
 |-------------|---------------|
-| **Miscoverage rate & Interval width** | <p align="center"> <img src="results/figures/confidence_metrics.png" width="40%"> </p> |
-| **Interval width vs. hotspot match** | <p align="center"> <img src="results/figures/interval_width_by_match.png" width="40%"> </p> |
-| **Confidence by hotspot category** | <p align="center"> <img src="results/figures/confidence_dist.png" width="40%"> </p>  |
+| **Miscoverage rate & Interval width** | <p align="center"> <img src="results/figures/confidence_metrics.png" width="60%"> </p> |
+| **Interval width vs. hotspot match** | <p align="center"> <img src="results/figures/interval_width_by_match.png" width="60%"> </p> |
+| **Confidence by hotspot category** | <p align="center"> <img src="results/figures/confidence_dist.png" width="60%"> </p>  |
 
 These plots reveal how uncertainty varies across space and hotspot classification types.
 
@@ -47,14 +47,14 @@ These plots reveal how uncertainty varies across space and hotspot classificatio
 
 ## 📍 Hotspot Comparison
 
-<p align="center"> <img src="results/figures/hotspot_comparison.png" width="40%"> </p> 
+<p align="center"> <img src="results/figures/hotspot_comparison.png" width="70%"> </p> 
 
 > Static model predictions (right) vs. cumulative test-period hotspots (left).  
 > While broad trends are captured, dynamic errors highlight the importance of uncertainty-aware methods.
 
 ## 🔽🟢🔼 Predictions Intervals
-<p align="center"> <img src="results/figures/predictions_intervals.png" width="50%"> </p> 
----
+<p align="center"> <img src="results/figures/predictions_intervals.png" width="80%"> </p> 
+
 
 ## 🔬 [Experiments Overview](experiments/chicago_real_data)
 
