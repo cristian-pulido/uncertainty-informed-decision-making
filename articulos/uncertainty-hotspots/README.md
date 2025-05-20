@@ -1,14 +1,116 @@
-# Uncertainty in Crime Hotspot Prediction
+# Prioritizing Crime Hotspots with Conformal Prediction and Uncertainty Quantification
 
-This repository provides a complete experimental framework for evaluating crime hotspot prediction under uncertainty, combining synthetic simulations and real-world data from the city of Chicago.
+This work proposes a **model-agnostic framework** to classify crime hotspots by combining:
+- 🔢 Point predictions from spatio-temporal models
+- 📉 Prediction intervals via **Conformal Prediction (CP)**
+- 📈 Crime indicators (historical frequency, binary predictions, and intensity)
+- 🎯 Confidence scores derived from interval width.
 
+Each spatial unit is assigned to one of four action categories:  
+**Priority**, **Critical**, **Under Surveillance**, or **Low Interest**.
+
+
+## 🔧 Method Pipeline
+
+
+<p align="center"> <img src="results/figures/Schematic_model.png" width="50%"> </p>
+
+> The framework starts with historical crime data, applies a simple forecast model, calibrates Conformal Prediction intervals, and classifies zones by combining confidence and crime indicators.
+
+## 🗺️ Priority Maps
+<p align="center"> <img src="results/figures/priority_maps.png" width="60%"> </p>
+
+## 📊 Sensitivity Analysis
+
+<p align="center"> <img src="results/figures/sensitivity.png" width="40%"> </p>
+
+> Effect of varying thresholds for crime and confidence scores.  
+> Higher confidence filters (solid lines) consistently improve prioritization performance (PEI*).
+
+## 📉 Confidence and Miscoverage Metrics
+
+| Metric Type | Visualization |
+|-------------|---------------|
+| **Miscoverage rate & Interval width** | <p align="center"> <img src="results/figures/confidence_metrics.png" width="40%"> </p> |
+| **Interval width vs. hotspot match** | <p align="center"> <img src="results/figures/interval_width_by_match.png" width="40%"> </p> |
+| **Confidence by hotspot category** | <p align="center"> <img src="results/figures/confidence_dist.png" width="40%"> </p>  |
+
+These plots reveal how uncertainty varies across space and hotspot classification types.
+
+### 🎯 Hotspot Match Types:
+| Label       | Description                                     |
+|-------------|-------------------------------------------------|
+| `Both`      | Cell is a hotspot in both prediction and truth. |
+| `Pred-only` | Predicted as hotspot, but not in ground truth.  |
+| `GT-only`   | Ground truth hotspot, but not predicted.        |
+| `Neither`   | Not a hotspot in either.                        |
+
+## 📍 Hotspot Comparison
+
+<p align="center"> <img src="results/figures/hotspot_comparison.png" width="40%"> </p> 
+
+> Static model predictions (right) vs. cumulative test-period hotspots (left).  
+> While broad trends are captured, dynamic errors highlight the importance of uncertainty-aware methods.
+
+## 🔽🟢🔼 Predictions Intervals
+<p align="center"> <img src="results/figures/predictions_intervals.png" width="50%"> </p> 
 ---
 
-## 🚩 Research Objective
+## 🔬 [Experiments Overview](experiments/chicago_real_data)
 
-Our main goal is to evaluate **predictive performance and uncertainty quantification** in spatial-temporal crime forecasting. We aim to support **risk-aware interventions** by producing interpretable metrics like **confidence**, **coverage**, and **priority scores** at the cell level.
+### 📁 [`01_preprocessing.ipynb`](experiments/chicago_real_data/01_preprocessing.ipynb)
 
----
+- Loads and cleans the official 2024 Chicago crime dataset.
+- Selects relevant crime types (e.g., `ASSAULT`, `ROBBERY`, `NARCOTICS`).
+- Maps police zones to a 2D grid using a reproducible spatial mapping.
+- Aggregates daily counts and exports a formatted dataset.
+
+
+### 🧪 [`02_model_Real_chicago.ipynb`](experiments/chicago_real_data/02_Model_Real_Chicago.ipynb)
+
+- Trains a naive per-cell model (mean count) on the Chicago dataset.
+- Evaluates it on the test set using traditional spatio-temporal metrics:
+  - RMSE, MAE, PAI, PEI, PEI*
+- Produces baseline comparisons across different hotspot coverage levels.
+
+### 📊 [`03_visualize_hotspots.ipynb`](experiments/chicago_real_data/03_visualize_hotspots)
+
+- Visualizes daily and average predictions vs. ground truth.
+- Highlights spatial variability in hotspot coverage.
+- Saves prediction masks and hotspots for future comparison.
+
+### 📐 [`04_uncertainty_analysis.ipynb`](experiments/chicago_real_data/04_uncertainty_analysis.ipynb)
+
+- Applies **MAPIE** (Conformal Prediction) to the naive model.
+- Computes per-cell prediction intervals.
+- Measures and visualizes:
+  - Interval width
+  - Miscoverage rate
+  - Confidence scores
+- Introduces a **Hotspot Priority Map**:
+  - Combines confidence and frequency into a **4-class taxonomy**.
+
+| Category        | Frequency | Confidence | Color    |
+|----------------|-----------|-------------|----------|
+| 🟥 Priority     | High      | High        | Red      |
+| 🟧 Critical     | High      | Low         | Orange   |
+| 🟨 Under Surveillance   | Low       | Low         | Yellow   |
+| 🟩 Low Interest | Low       | High        | Green    |
+
+- Visualizes sensitivity to confidence and frequency thresholds.
+- Stores intermediate results for further exploration.
+
+### 🧪 [`05_evaluate_new_hotspots.ipynb`](experiments/chicago_real_data/05_evaluate_new_hotspots.ipynb)
+
+- Compares baseline hotspot predictions with **new prioritized hotspots**.
+- Computes PEI\* across multiple scenarios:
+  - Ground truth historical frequency
+  - Binary hotspot mask
+  - Continuous predicted intensity
+- Evaluates **sensitivity** of performance to thresholds in:
+  - Confidence
+  - Risk frequency
+- Produces visual summaries of PEI* trends under various configurations.
 
 ## 📂 Repository Structure
 
@@ -27,83 +129,21 @@ uncertainty-hotspots
 > `../uncertainty-informed-data/real_data/Chicago/`.
 > `../uncertainty-informed-data/simulations/poisson/`.
 
----
 
 ## 🧠 General Workflow Overview
 
-### 1. ⚙️ Configuration Setup
+### ⚙️ Configuration Setup
 
-- Global parameters are defined in `config.json`:
+- Global parameters are defined in [`config.json`](config.json):
   - Grid size, partitions (train/calibration/test), hotspot definitions, etc.
   - Used consistently across synthetic and real-world pipelines.
 
----
-
-## 🔬 Experiments Overview
-
-### 📁 `01_preprocessing.ipynb`
-
-- Loads and cleans the official 2024 Chicago crime dataset.
-- Selects relevant crime types (e.g., `ASSAULT`, `ROBBERY`, `NARCOTICS`).
-- Maps police beats to a 2D grid using a reproducible spatial mapping.
-- Aggregates daily counts and exports a formatted dataset.
-
-### 🧪 `02_model_Real_chicago.ipynb`
-
-- Trains a naive per-cell model (mean count) on the Chicago dataset.
-- Evaluates it on the test set using traditional spatio-temporal metrics:
-  - RMSE, MAE, PAI, PEI, PEI*
-- Produces baseline comparisons across different hotspot coverage levels.
-
-### 📊 `03_visualize_hotspots.ipynb`
-
-- Visualizes daily and average predictions vs. ground truth.
-- Highlights spatial variability in hotspot coverage.
-- Saves prediction masks and hotspots for future comparison.
-
-### 📐 `04_uncertainty_analiysis.ipynb`
-
-- Applies **MAPIE** (Conformal Prediction) to the naive model.
-- Computes per-cell prediction intervals.
-- Measures and visualizes:
-  - Interval width
-  - Miscoverage rate
-  - Confidence scores
-- Introduces a **Hotspot Priority Map**:
-  - Combines confidence and frequency into a **4-class taxonomy**.
-
-| Category        | Frequency | Confidence | Color    |
-|----------------|-----------|-------------|----------|
-| 🟥 Priority     | High      | High        | Red      |
-| 🟧 Critical     | High      | Low         | Orange   |
-| 🟨 Monitoring   | Low       | Low         | Yellow   |
-| 🟩 Low Interest | Low       | High        | Green    |
-
-- Visualizes sensitivity to confidence and frequency thresholds.
-- Stores intermediate results for further exploration.
-
-### 🧪 `05_evaluate_new_hotspots.ipynb`
-
-- Compares baseline hotspot predictions with **new prioritized hotspots**.
-- Computes PEI\* across multiple scenarios:
-  - Ground truth historical frequency
-  - Binary hotspot mask
-  - Continuous predicted intensity
-- Evaluates **sensitivity** of performance to thresholds in:
-  - Confidence
-  - Risk frequency
-- Produces visual summaries of PEI* trends under various configurations.
-
----
-
-## 📦 Key Modules (src/)
+## 📦 Key Modules ([src/](../../src/))
 
 - `models/`: naive, poisson models per cell
 - `evaluation/`: metrics for CP, PAI/PEI, temporal/spatial evaluation
 - `conformal/`: wrapper for MAPIE and per-cell calibration
 - `utils/`: preprocessing, grid transforms, plotting
-
----
 
 ## 🔍 Uncertainty-Aware Hotspot Prioritization
 
@@ -117,8 +157,6 @@ This score enables **real-time prioritization**, even without future labels.
 
 Using both **confidence** and **frequency**, cells are classified into four categories that support operational decision-making.
 
----
-
 ## 📈 Metrics
 
 We evaluate:
@@ -128,7 +166,7 @@ We evaluate:
 - **Miscoverage** and **Interval Width** per cell
 - **Sensitivity to threshold values** in priority mapping
 
----
+
 
 ## 📖 References
 
@@ -151,5 +189,4 @@ We evaluate:
 ✔️ Modular structure, reproducible experiments  
 ✔️ Integration of conformal prediction and risk-based prioritization  
 ⬜ Integration with additional ML models  
-⬜ Longitudinal drift evaluation  
-⬜ Deployment-ready dashboard
+⬜ Longitudinal drift evaluation
