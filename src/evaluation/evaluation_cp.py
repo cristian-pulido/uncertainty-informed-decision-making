@@ -1,179 +1,379 @@
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import os
 import pandas as pd
-from src.utils.spatial_processing import grid3d_to_dataframe_with_index, predictions_to_grid
+from src.evaluation.hotspot_classification import classify_hotspots
 
-def compute_miscoverage_per_cell(y_true_grid, y_min_grid, y_max_grid, reference_X):
+def compute_in_interval(y_min, y_max, y_true):
     """
-    Compute per-sample interval errors: both a binary miscoverage flag and the distance to the interval bounds
-    when the true value lies outside the predicted interval.
+    Returns a boolean array indicating whether y_true is within [y_min, y_max].
+    """
+    return (y_min <= y_true) & (y_max >= y_true)
+
+def compute_mean_width(y_min, y_max):
+    """
+    Computes the width of prediction intervals.
+    """
+    return y_max - y_min
+
+def compute_error_outside_interval(y_min, y_max, y_true):
+    """
+    Computes the error magnitude for predictions that fall outside the interval.
+    Returns np.nan for values inside the interval.
+    """
+    error = np.full_like(y_true, np.nan)
+    lower_miss = (y_min - y_true) > 0
+    upper_miss = (y_max - y_true) < 0
+    error[lower_miss] = (y_min - y_true)[lower_miss]
+    error[upper_miss] = (y_true - y_max)[upper_miss]
+    return error
+
+def compute_mwi(widths, error, alpha=0.1):
+    """
+    Compute the Mean Winkler Interval Score (MWI) from flattened arrays.
+
+    This metric combines the average interval width with a penalty term 
+    proportional to the amount of error outside the prediction interval.
 
     Parameters
     ----------
-    y_true_grid : np.ndarray of shape (T, R, C)
-        Ground truth values for each timestep and spatial cell.
-
-    y_min_grid : np.ndarray of shape (R, C)
-        Lower bound of the prediction interval (constant over time).
-
-    y_max_grid : np.ndarray of shape (R, C)
-        Upper bound of the prediction interval (constant over time).
-
-    reference_X : pd.DataFrame
-        DataFrame with 'timestep', 'row', and 'col' columns, used to align the resulting DataFrame with the original input.
+    widths : np.ndarray
+        1D array of interval widths.
+    error : np.ndarray
+        1D array of errors for values outside the prediction interval.
+        Should be 0 when the value is within the interval.
+    alpha : float
+        Significance level (e.g., 0.1 for 90% prediction intervals).
 
     Returns
     -------
-    pd.DataFrame
-        A DataFrame aligned with reference_X that includes:
-        - 'not_in_interval' : 1 if the true value lies outside the interval, 0 otherwise.
-        - 'distance_to_interval' : distance from the true value to the closest bound when outside the interval (0 if inside).
+    mwi : float
+        The Mean Winkler Interval Score.
     """
+    widths = np.asarray(widths).flatten()
+    error = np.asarray(error).flatten()
 
-    n_in_interval = ~((y_true_grid >= y_min_grid) & (y_true_grid <= y_max_grid))
-    df1 = grid3d_to_dataframe_with_index(n_in_interval, reference_X, "not_in_interval")
+    if widths.shape != error.shape:
+        raise ValueError("Widths and error arrays must have the same shape.")
+    
+    per_instance = widths + 2 / alpha * np.nan_to_num(error)
 
-    error = np.zeros_like(n_in_interval).astype(float)
-
-    error[(y_min_grid - y_true_grid) > 0]+=(y_min_grid-y_true_grid)[(y_min_grid - y_true_grid) > 0]
-    error[(y_max_grid - y_true_grid) < 0]+=(y_true_grid-y_max_grid)[(y_max_grid - y_true_grid) < 0]
-    df2 = grid3d_to_dataframe_with_index(error, reference_X, "distance_to_interval")
-
-    return pd.concat([reference_X,df1,df2],axis=1)
+    return np.nanmean(per_instance)
 
 
-def compute_overall_miscoverage(miscoverage):
+def compute_cwc(widths, in_interval, alpha=0.1, eta=8, ref=10.0):
     """
-    Aggregate per-sample miscoverage and interval error distance into per-cell and overall metrics.
+    Compute the Coverage Width-based Criterion (CWC) from flattened arrays.
+
+    Parameters¶
+    ----------
+    widths : np.ndarray
+        1D array of interval widths.
+    in_interval : np.ndarray
+        1D boolean array indicating whether the true value falls within the interval.
+    alpha : float
+        Desired error level (e.g., 0.1 for 90% nominal coverage).
+    eta : float
+        Penalization parameter for coverage deviation.
+    ref : float
+        Reference maximum width used for normalization.
+
+    Returns
+    -------
+    cwc : float
+        Computed CWC score.
+    """
+    widths = np.asarray(widths).flatten()
+    in_interval = np.asarray(in_interval).flatten()
+
+    if widths.shape != in_interval.shape:
+        raise ValueError("Widths and in_interval must have the same shape.")
+
+    width_score = np.clip(widths, None, ref) / ref
+    mean_width_score = np.nanmean(width_score)
+    coverage = np.nanmean(in_interval)
+    penalty = np.exp(-eta * (coverage - (1 - alpha))**2)
+
+    return (1 - mean_width_score) * penalty
+
+
+def compute_metric_by_group(metric_fn, metric_inputs, mask, axis=None,**kwargs):
+    """
+    Compute a metric by group mask over flattened or temporal slices.
 
     Parameters
     ----------
-    miscoverage : pd.DataFrame
-        DataFrame containing at least the following columns:
-        - 'row', 'col': spatial coordinates
-        - 'not_in_interval': binary flag (1 if outside interval, 0 otherwise)
-        - 'distance_to_interval': float, distance to nearest bound (0 if inside)
+    metric_fn : callable
+        Function to compute (e.g. compute_cwc or compute_mwi).
+    metric_inputs : tuple of np.ndarray
+        Input arrays to the function, must have matching shapes.
+    mask : np.ndarray
+        Grouping mask. Can be:
+        - 2D (R, C) → static grouping over space.
+        - 3D (T, R, C) → dynamic grouping over space and time.
+    axis : int or None
+        If None: aggregate over all time.
+        If axis=0: aggregate per timestep (e.g., shape (T, R, C)).
 
     Returns
     -------
-    miscoverage_grid : np.ndarray
-        Grid of average miscoverage per cell.
-
-    overall_m_coverage : float
-        Overall mean miscoverage across all cells and timesteps.
-
-    std_m_coverage : float
-        Standard deviation of miscoverage across all samples.
-
-    avg_error_outside : float
-        Mean distance to interval, considering only samples outside the interval.
-
-    std_error_outside : float
-        Standard deviation of the distance to interval for outside samples.
+    dict
+        Mapping group label to metric (float) or series (list of float).
     """
-    grid_size = np.array(miscoverage[["row", "col"]].max()) + 1
+    mask = np.asarray(mask)
+    results = {}
 
-    # Compute miscoverage grid
-    group_time = miscoverage.groupby(["row", "col"]).agg({"not_in_interval": "mean"}).reset_index()
-    miscoverage_grid, _ = predictions_to_grid(
-        group_time,
-        group_time["not_in_interval"].values,
-        group_time["not_in_interval"].values,
-        grid_size,
-        aggregate=False
+    # Get labels excluding nan
+    unique_labels = np.unique(mask)
+
+    for label in unique_labels:
+        submask = mask == label
+
+        if axis is None:
+            # Expand 2D mask to 3D if needed
+            if submask.ndim == 2:
+                submask = np.broadcast_to(submask, metric_inputs[0].shape)
+
+            # Apply same mask to all inputs
+            inputs = [x[submask] for x in metric_inputs]
+            results[str(label)] = metric_fn(*inputs,**kwargs)
+
+        else:
+            # axis=0: per timestep
+            values = []
+            for t in range(metric_inputs[0].shape[0]):
+                m = submask[t] if submask.ndim == 3 else submask  # time slice or static
+                inputs = [x[t][m] for x in metric_inputs]
+                values.append(metric_fn(*inputs,**kwargs))
+            results[str(label)] = values
+
+    return results
+
+def compute_full_metric_analysis(
+    metric_fn,
+    metric_inputs,
+    grid_size,
+    static_group_mask=None,
+    dynamic_group_mask=None,
+    **kwargs
+):
+    """
+    Compute global, spatial, temporal and group-based evaluations for a given metric.
+
+    Parameters
+    ----------
+    metric_fn : callable
+        Function to compute the metric (e.g., compute_cwc, compute_mwi).
+    metric_inputs : tuple of np.ndarray
+        Tuple of arrays to be passed to the metric function, e.g. (widths, in_interval).
+    grid_size : tuple
+        Shape of the grid as (rows, cols).
+    static_group_mask : np.ndarray, optional
+        2D array (R, C) indicating static group categories.
+    dynamic_group_mask : np.ndarray, optional
+        3D array (T, R, C) indicating group per timestep.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+            - global: scalar
+            - per_cell: 2D np.ndarray (R, C)
+            - per_time: 1D np.ndarray (T,)
+            - static_group: DataFrame
+            - static_group_time: DataFrame
+            - dynamic_group: DataFrame
+            - dynamic_group_time: DataFrame
+    """
+    widths, in_interval = metric_inputs
+    rows, cols = grid_size
+    T = widths.shape[0]
+
+    # Global metric
+    global_metric = metric_fn(*[x.flatten() for x in metric_inputs],**kwargs)
+
+    # Per-cell metric
+    numering_cells = np.arange(rows * cols).reshape(rows, cols)
+    per_cell_values = [
+        metric_fn(*[x[:, numering_cells == n] for x in metric_inputs],**kwargs)
+        for n in range(rows * cols)
+    ]
+    per_cell_matrix = np.array(per_cell_values).reshape(rows, cols)
+
+    # Per-time metric
+    per_time = np.array([
+        metric_fn(*[x[t] for x in metric_inputs],**kwargs)
+        for t in range(T)
+    ])
+
+    # Grouped by static categories
+    static_group = None
+    static_group_time = None
+    if static_group_mask is not None:
+        static_group = compute_metric_by_group(metric_fn, metric_inputs, static_group_mask,**kwargs)
+        static_group = pd.DataFrame.from_dict(static_group, orient='index', columns=["Metric"]).reset_index().rename(columns={"index": "Cell Type"})
+
+        static_group_time = compute_metric_by_group(metric_fn, metric_inputs, static_group_mask, axis=0,**kwargs)
+        static_group_time = pd.DataFrame.from_dict(static_group_time)
+
+    # Grouped by dynamic categories
+    dynamic_group = None
+    dynamic_group_time = None
+    if dynamic_group_mask is not None:
+        dynamic_group = compute_metric_by_group(metric_fn, metric_inputs, dynamic_group_mask,**kwargs)
+        dynamic_group = pd.DataFrame.from_dict(dynamic_group, orient='index', columns=["Metric"]).reset_index().rename(columns={"index": "Cell Type"})
+
+        dynamic_group_time = compute_metric_by_group(metric_fn, metric_inputs, dynamic_group_mask, axis=0,**kwargs)
+        dynamic_group_time = pd.DataFrame.from_dict(dynamic_group_time)
+
+    return {
+        "global": global_metric,
+        "per_cell": per_cell_matrix,
+        "per_time": per_time,
+        "static_group": static_group,
+        "static_group_time": static_group_time,
+        "dynamic_group": dynamic_group,
+        "dynamic_group_time": dynamic_group_time,
+    }
+
+
+def base_analysis(y_min, y_max, y_pred, y_true, grid_size, alpha=0.1, hotspot_percentage=0.3, eta=8, ref=10 ):
+    """
+    Performs a full evaluation of prediction intervals and hotspot classification.
+
+    This function computes core uncertainty-related metrics (coverage, interval width,
+    error outside interval, MWI and CWC) along with hotspot classifications
+    (both static and temporal), and returns all intermediate and final results.
+
+    Parameters
+    ----------
+    y_min : np.ndarray
+        Lower bounds of prediction intervals (T, R, C).
+    y_max : np.ndarray
+        Upper bounds of prediction intervals (T, R, C).
+    y_pred : np.ndarray
+        Predicted values or expected values (T, R, C).
+    y_true : np.ndarray
+        Ground truth values (T, R, C).
+    grid_size : tuple of int
+        Spatial grid size as (rows, cols).
+    alpha : float
+        Significance level of prediction intervals (e.g., 0.1 for 90%).
+    hotspot_percentage : float
+        Percentage of cells to classify as hotspots.
+    eta : float
+        Penalization parameter for CWC.
+    ref : float
+        Reference maximum width used in CWC normalization.
+
+    Returns
+    -------
+    Tuple of:
+        - in_interval : np.ndarray
+            Boolean array (T, R, C), True if true value within prediction interval.
+        - widths : np.ndarray
+            Width of prediction intervals (T, R, C).
+        - error : np.ndarray
+            Error outside interval (T, R, C), NaN if inside.
+        - overall_hs_class_grid : np.ndarray
+            Static hotspot classification (R, C).
+        - time_step_hs_class_grid : np.ndarray
+            Temporal hotspot classification (T, R, C).
+        - result_cwc : dict
+            Full results for Coverage Width-Based Criterion.
+        - result_mwi : dict
+            Full results for Mean Winkler Interval Score.
+        - coverage_results : dict
+            Full results for coverage metric.
+        - width_results : dict
+            Full results for interval width.
+        - error_results : dict
+            Full results for error outside interval.
+    """
+
+    # Compute interval components
+    in_interval = compute_in_interval(y_min, y_max, y_true)
+    widths = compute_mean_width(y_min, y_max)
+    error = compute_error_outside_interval(y_min, y_max, y_true)
+
+    # Hotspot classifications
+    overall_hs_class_grid = classify_hotspots(
+        y_true.sum(axis=0), y_pred.sum(axis=0), hotspot_percentage
+    )
+    time_step_hs_class_grid = classify_hotspots(
+        y_true, y_pred, hotspot_percentage
     )
 
-    # Overall miscoverage
-    overall_m_coverage = miscoverage["not_in_interval"].mean()
-    std_m_coverage = miscoverage["not_in_interval"].std()
+    # Metric evaluations
+    result_cwc = compute_full_metric_analysis(
+        compute_cwc,
+        (widths, in_interval),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid,
+        eta=eta,
+        ref=ref,
+        alpha=alpha
+    )
 
-    # Distance to interval (only when outside)
-    outside = miscoverage[miscoverage["not_in_interval"] == 1]
-    avg_error_outside = outside["distance_to_interval"].mean()
-    std_error_outside = outside["distance_to_interval"].std()
+    result_mwi = compute_full_metric_analysis(
+        compute_mwi,
+        (widths, error),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid,
+        alpha=alpha
+    )
+
+    coverage_results = compute_full_metric_analysis(
+        lambda x, _: np.nanmean(x),
+        (in_interval, in_interval),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid
+    )
+
+    width_results = compute_full_metric_analysis(
+        lambda x, _: np.nanmean(x),
+        (widths, widths),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid
+    )
+
+    error_results = compute_full_metric_analysis(
+        lambda x, _: np.nanmean(x),
+        (error, error),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid
+    )
+
+    y_true_results = compute_full_metric_analysis(
+        lambda x, _: np.nansum(x),
+        (y_true, y_true),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid
+    )
+
+    y_pred_results = compute_full_metric_analysis(
+        lambda x, _: np.nansum(x),
+        (y_pred, y_pred),
+        grid_size=grid_size,
+        static_group_mask=overall_hs_class_grid,
+        dynamic_group_mask=time_step_hs_class_grid
+    )
 
     return (
-        miscoverage_grid,
-        overall_m_coverage,
-        std_m_coverage,
-        avg_error_outside,
-        std_error_outside
+        in_interval,
+        widths,
+        error,
+        overall_hs_class_grid,
+        time_step_hs_class_grid,
+        result_cwc,
+        result_mwi,
+        coverage_results,
+        width_results,
+        error_results,
+        y_true_results,
+        y_pred_results
     )
-
-
-def compute_interval_width_per_sample(y_min_grid, y_max_grid, reference_X):
-    """
-    Compute interval width per sample from temporal 3D prediction grid and map it to the reference index.
-
-    Parameters:
-    - y_min_grid: np.ndarray of shape (T, R, C), lower bounds
-    - y_max_grid: np.ndarray of shape (T, R, C), upper bounds
-    - reference_X: pd.DataFrame with 'timestep', 'row', 'col', used to align the results
-
-    Returns:
-    - pd.DataFrame with 'interval_width' column and same index as reference_X
-    """
-    width_grid = y_max_grid - y_min_grid
-    df = grid3d_to_dataframe_with_index(width_grid, reference_X, "interval_width")
-    return pd.merge(reference_X, df, left_index=True, right_index=True)
-
-
-def compute_overall_interval_width(interval_df):
-    """
-    Aggregate interval width per cell and compute overall statistics.
-
-    Parameters:
-    - interval_df: pd.DataFrame with ['row', 'col', 'interval_width']
-
-    Returns:
-    - width_grid: np.ndarray of shape (R, C), average width per cell
-    - overall_width: float, global mean of interval width
-    - std_width: float, global standard deviation of interval width
-    """
-    grid_size = np.array(interval_df[["row", "col"]].max()) + 1
-
-    grouped = interval_df.groupby(["row", "col"]).agg({"interval_width": "mean"}).reset_index()
-
-    width_grid, _ = predictions_to_grid(
-        grouped,
-        grouped["interval_width"].values,
-        grouped["interval_width"].values,
-        grid_size,
-        aggregate=False
-    )
-
-    overall_width = interval_df["interval_width"].mean()
-    std_width = interval_df["interval_width"].std()
-
-    return width_grid, overall_width, std_width
-
-
-def compute_spatiotemporal_confidence(df_metrics):
-    """
-    Compute a per-cell, per-time confidence score based only on the predicted interval width.
-
-    This function is suitable for real-world deployment, where ground truth values are not available.
-
-    Parameters:
-    - df_metrics: pd.DataFrame with columns:
-        ["timestep", "row", "col", "Interval Width"]
-
-    Returns:
-    - df_confidence: pd.DataFrame with added 'Confidence' column
-        Confidence is defined as 1 - normalized_interval_width ∈ [0, 1]
-    """
-
-    df = df_metrics.copy()
-
-    # Normalize interval width
-    width_min = df["Interval Width"].min()
-    width_max = df["Interval Width"].max()
-    df["width_norm"] = (df["Interval Width"] - width_min) / (width_max - width_min + 1e-8)
-
-    # Confidence purely from interval width
-    df["Confidence"] = 1 - df["width_norm"]
-    df["Confidence"] = df["Confidence"].clip(lower=0.0, upper=1.0)
-
-    return df

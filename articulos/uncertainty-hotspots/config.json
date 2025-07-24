@@ -17,7 +17,7 @@
         "time_granularity": "days"
     },
     "evaluation": {
-        "hotspot_percentage": 0.10,
+        "hotspot_percentage": 0.30,
         "hotspot_definition": "by_crimes"
         }
   }

@@ -4,43 +4,56 @@ from src.utils.spatial_processing import define_hotspot_by_crimes
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
-def classify_temporal_hotspots(grid_true, grid_pred, hotspot_percentage):
+def classify_hotspots(grid_true, grid_pred, hotspot_percentage):
     """
-    Classify cells over time based on true and predicted hotspot alignment.
+    Classify cells (2D or 3D) based on hotspot alignment between true and predicted values.
 
-    Parameters:
-    - grid_true: np.ndarray (timesteps, rows, cols), ground truth crime counts
-    - grid_pred: np.ndarray (rows, cols), predicted hotspot mask (aggregated or static)
-    - hotspot_percentage: float, percentage used to define hotspots
+    Parameters
+    ----------
+    grid_true : np.ndarray
+        Ground truth crime counts. Either 3D (T, R, C) or 2D (R, C).
+    grid_pred : np.ndarray
+        Predicted crime counts or scores. Must be the same shape as grid_true.
+    hotspot_percentage : float
+        Percentage (0-1) used to define top cells as hotspots.
 
-    Returns:
-    - df_metrics: pd.DataFrame with columns:
-        timestep, row, col, misscoverage, interval_width, cell_type
+    Returns
+    -------
+    cell_type : np.ndarray
+        Array of strings ("Both", "GT-only", "Pred-only", "Neither") with same shape as input.
     """
-    timesteps, rows, cols = grid_true.shape
-    cell_type_sequence = np.full((timesteps, rows, cols), "Neither", dtype=object)
+    assert grid_true.shape == grid_pred.shape, "grid_true and grid_pred must have the same shape"
 
-    pred_mask = define_hotspot_by_crimes(grid_pred, hotspot_percentage)
+    if grid_true.ndim == 2:
+        # Single timestep case
+        rows, cols = grid_true.shape
+        pred_mask = define_hotspot_by_crimes(grid_pred, hotspot_percentage)
+        true_mask = define_hotspot_by_crimes(grid_true, hotspot_percentage)
 
-    for t in range(timesteps):
-        true_mask = define_hotspot_by_crimes(grid_true[t], hotspot_percentage)
+        cell_type = np.full((rows, cols), "Neither", dtype=object)
+        cell_type[true_mask & pred_mask] = "Both"
+        cell_type[true_mask & ~pred_mask] = "GT-only"
+        cell_type[~true_mask & pred_mask] = "Pred-only"
 
-        both = true_mask & pred_mask
-        gt_only = true_mask & (~pred_mask)
-        pred_only = (~true_mask) & pred_mask
+        return cell_type
 
-        cell_type_sequence[t][both] = "Both"
-        cell_type_sequence[t][gt_only] = "GT-only"
-        cell_type_sequence[t][pred_only] = "Pred-only"
+    elif grid_true.ndim == 3:
+        # Multiple timesteps case
+        timesteps, rows, cols = grid_true.shape
+        cell_type = np.full((timesteps, rows, cols), "Neither", dtype=object)
 
-    df_metrics = pd.DataFrame({
-        "timestep": np.repeat(np.arange(timesteps), rows * cols),
-        "row": np.tile(np.repeat(np.arange(rows), cols), timesteps),
-        "col": np.tile(np.arange(cols), timesteps * rows),
-        "cell_type": cell_type_sequence.flatten()
-    })
+        for t in range(timesteps):
+            pred_mask = define_hotspot_by_crimes(grid_pred[t], hotspot_percentage)
+            true_mask = define_hotspot_by_crimes(grid_true[t], hotspot_percentage)
 
-    return df_metrics
+            cell_type[t][true_mask & pred_mask] = "Both"
+            cell_type[t][true_mask & ~pred_mask] = "GT-only"
+            cell_type[t][~true_mask & pred_mask] = "Pred-only"
+
+        return cell_type
+
+    else:
+        raise ValueError("Input arrays must be 2D or 3D (T, R, C)")
 
 
 def hotspot_priority(

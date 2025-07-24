@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import matplotlib.colors as mcolors
+from matplotlib.ticker import PercentFormatter
+import pathlib
 
 
 def compare_prediction_maps(grids, titles, vmin=None, vmax=None, figsize=(14, 4)):
@@ -114,4 +117,127 @@ def plot_grid_map(grid, title="Grid Map", cmap="viridis", label="Value", vmin=No
     ax.set_xlabel("X coordinate")
     ax.set_ylabel("Y coordinate")
     fig.colorbar(cax, ax=ax, label=label)
+    plt.show()
+
+
+################################################################################
+
+
+def plot_geospatial_data_maps(
+    gdf_base,
+    df_list,
+    columns=None,
+    titles=None,
+    cmap="YlOrRd",
+    share_colorbar=True,
+    suptitle=None,
+    figsize=(12, 5),
+    edgecolor="black",
+    vmin=None,
+    vmax=None,
+    colorbar_labels=None,
+    percent_format=None,
+    save_path=None 
+):
+    """
+    Plot multiple prediction maps side by side with optional shared or individual colorbars.
+
+    Parameters
+    ----------
+    gdf_base : GeoDataFrame
+        Base geometry to merge with each df
+    df_list : list of DataFrames
+        Each must contain a 'beat' column and the data to plot
+    columns : list of str
+        Column names to visualize (one per df)
+    titles : list of str
+        Titles for each subplot
+    cmap : str
+        Matplotlib colormap
+    share_colorbar : bool
+        Whether to use a single shared colorbar
+    suptitle : str
+        Title for the entire figure
+    figsize : tuple
+        Figure size
+    edgecolor : str
+        Color of borders
+    vmin, vmax : float or list of float
+        Global or per-map color scale min/max
+    colorbar_labels : list of str
+        Custom labels for the colorbars
+    percent_format : list of bool
+        Whether to use percent format per map (or single bool if shared)
+    save_path : str
+        If given, saves figure to this path
+    """
+
+    n = len(df_list)
+    if columns is None or len(columns) != n:
+        raise ValueError("Must provide 'columns': one per DataFrame.")
+
+    if percent_format is None:
+        percent_format = [False] * n
+    elif isinstance(percent_format, bool):
+        percent_format = [percent_format] * n
+
+    if not share_colorbar and (vmin is None or isinstance(vmin, (int, float))):
+        vmin = [vmin] * n
+    if not share_colorbar and (vmax is None or isinstance(vmax, (int, float))):
+        vmax = [vmax] * n
+
+    fig, axes = plt.subplots(1, n, figsize=figsize, constrained_layout=True)
+    if n == 1:
+        axes = [axes]
+
+    # Shared normalization
+    norm = None
+    if share_colorbar:
+        global_min = min(df[col].min() for df, col in zip(df_list, columns)) if vmin is None else vmin
+        global_max = max(df[col].max() for df, col in zip(df_list, columns)) if vmax is None else vmax
+        norm = mcolors.Normalize(vmin=global_min, vmax=global_max)
+
+    for i, (df, col, ax) in enumerate(zip(df_list, columns, axes)):
+        merged = gdf_base.merge(df, how="left", left_on="beat_num", right_on="beat")
+
+        if share_colorbar:
+            merged.plot(column=col, cmap=cmap, ax=ax, edgecolor=edgecolor, legend=False, norm=norm)
+        else:
+            this_vmin = vmin[i] if isinstance(vmin, list) else None
+            this_vmax = vmax[i] if isinstance(vmax, list) else None
+            fmt = PercentFormatter(decimals=0) if percent_format[i] else None
+            merged.plot(
+                column=col,
+                cmap=cmap,
+                ax=ax,
+                edgecolor=edgecolor,
+                legend=True,
+                vmin=this_vmin,
+                vmax=this_vmax,
+                legend_kwds={
+                    "label": colorbar_labels[i] if colorbar_labels else col,
+                    "format": fmt
+                }
+            )
+
+        ax.set_title(titles[i] if titles else f"Map {i+1}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    # Shared colorbar
+    if share_colorbar:
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm._A = []
+        cbar = fig.colorbar(sm, ax=axes, shrink=0.8)
+        cbar.set_label(colorbar_labels[0] if colorbar_labels else columns[0])
+        if percent_format[0]:
+            cbar.ax.yaxis.set_major_formatter(PercentFormatter(decimals=0))
+
+    if suptitle:
+        plt.suptitle(suptitle, fontsize=14)
+
+    if save_path:
+        format_ = pathlib.Path(save_path).suffix[1:]
+        fig.savefig(save_path, format=format_, bbox_inches="tight", dpi=300)
+
     plt.show()
