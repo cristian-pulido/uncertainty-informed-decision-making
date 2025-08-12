@@ -377,3 +377,63 @@ def base_analysis(y_min, y_max, y_pred, y_true, grid_size, alpha=0.1, hotspot_pe
         y_true_results,
         y_pred_results
     )
+
+
+def compute_weighted_metric_summary(metric_dict, weights=None):
+    """
+    Compute global and weighted summaries of a given metric over static and dynamic hotspot classifications.
+
+    Parameters
+    ----------
+    metric_dict : dict
+        Dictionary containing keys:
+        - 'global': float
+        - 'static_group': DataFrame with 'Cell Type' and 'Metric' columns
+        - 'static_group_time': DataFrame with each column a cell type
+        - 'dynamic_group': DataFrame like static_group
+        - 'dynamic_group_time': DataFrame like static_group_time
+    weights : dict, optional
+        Dictionary mapping cell types to importance weights.
+        If None, equal weights are used for present cell types.
+
+    Returns
+    -------
+    dict with keys:
+        - global_value : float
+        - static_weighted : float
+        - static_series : pd.Series
+        - dynamic_weighted : float
+        - dynamic_series : pd.Series
+    """
+    global_value = metric_dict["global"]
+
+    # Static
+    df_static = metric_dict["static_group"]
+    df_static_time = metric_dict["static_group_time"]
+
+    # Dynamic
+    df_dynamic = metric_dict["dynamic_group"]
+    df_dynamic_time = metric_dict["dynamic_group_time"]
+
+    # Determine default weights if not given
+    if weights is None:
+        # Use all types present in static group
+        cell_types = df_static["Cell Type"].values
+        weights = {ct: 1 / len(cell_types) for ct in cell_types}
+
+    def weighted_avg(df, is_time_series=False):
+        if is_time_series:
+            return df[list(weights)].mul(pd.Series(weights), axis=1).sum(axis=1)
+        else:
+            return sum(
+                weights[t] * df.loc[df["Cell Type"] == t, "Metric"].values[0]
+                for t in weights if t in df["Cell Type"].values
+            )
+
+    return {
+        "global_value": global_value,
+        "static_weighted": weighted_avg(df_static),
+        "static_series": weighted_avg(df_static_time, is_time_series=True),
+        "dynamic_weighted": weighted_avg(df_dynamic),
+        "dynamic_series": weighted_avg(df_dynamic_time, is_time_series=True),
+    }

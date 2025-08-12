@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
-from mapie.regression import SplitConformalRegressor, JackknifeAfterBootstrapRegressor, TimeSeriesRegressor
-from mapie.subsample import BlockBootstrap
+from sklearn.model_selection import TimeSeriesSplit
+from mapie.regression import CrossConformalRegressor, SplitConformalRegressor, JackknifeAfterBootstrapRegressor, TimeSeriesRegressor
+from mapie.subsample import Subsample, BlockBootstrap
 from sklearn.dummy import DummyRegressor
 from tqdm import tqdm
+from .interval_prediction_gen import MinMaxIntervalRegressor,GaussianHomoskedasticPIRegressor,ResidualBootstrapPIRegressor,PoissonIntervalRegressor
+from sklearn.base import clone
 
 def apply_conformal_mapie_per_cell(
     X_train, y_train,
@@ -11,7 +14,7 @@ def apply_conformal_mapie_per_cell(
     X_test, y_test,
     base_estimator=None,
     alpha=0.1,
-    conformalizer="jackknife",  # "split", "jackknife", or "time_serie"
+    conformalizer="jackknife",  # "split", "jackknife", or "time_serie" "cross"
     grid_size=(40, 40),
     method="plus",              # Only for "jackknife"
     agg_function="mean",        # Only for "time_serie"
@@ -78,6 +81,11 @@ def apply_conformal_mapie_per_cell(
         "split": SplitConformalRegressor,
         "jackknife": JackknifeAfterBootstrapRegressor,
         "time_serie": TimeSeriesRegressor,
+        "min_max": MinMaxIntervalRegressor,
+        "cross": CrossConformalRegressor,
+        "GaussianHomos": GaussianHomoskedasticPIRegressor,
+        "ResidualBootstrap": ResidualBootstrapPIRegressor,
+        "Poisson": PoissonIntervalRegressor
     }
 
     if conformalizer not in conformal_classes:
@@ -104,35 +112,61 @@ def apply_conformal_mapie_per_cell(
             y_test_cell = y_test.loc[mask_test]
             t_test_cell = X_test.loc[mask_test, "timestep"].values
 
+
+            # if callable(base_estimator):
+            #     model = base_estimator()
+            # elif base_estimator is not None:
+            #     model = clone(base_estimator)
+            # else:
+            #     model = DummyRegressor(strategy="mean")
+
             model = base_estimator() if callable(base_estimator) else DummyRegressor(strategy="mean")
 
-            if conformalizer == "split":
+            if conformalizer in ["split", "min_max", "GaussianHomos", "ResidualBootstrap","Poisson"]:
                 mapie = ConformalClass(estimator=model, confidence_level=1 - alpha, prefit=False)
                 mapie.fit(X_train_cell, y_train_cell)
                 mapie.conformalize(X_cal_cell, y_cal_cell)
 
-            elif conformalizer == "jackknife":
+            elif conformalizer in ["jackknife", "cross"]:
                 if method not in ["plus", "minmax"]:
-                    raise ValueError(f"method={method} is not compatible with JackknifeAfterBootstrapRegressor.")
+                    raise ValueError(f"method={method} is not compatible with JackknifeAfterBootstrapRegressor or CrossConformalRegressor.")
                 X_comb = pd.concat([X_train_cell, X_cal_cell])
                 y_comb = pd.concat([y_train_cell, y_cal_cell])
+
+                
+                keys = {
+                        "estimator": model,
+                        "confidence_level": 1 - alpha,
+                        "method": method,
+                        "n_jobs": -1                      
+                    }
+
+                if conformalizer == "cross":
+                    cv = TimeSeriesSplit(n_splits=10)
+                    keys["cv"] = cv
+
+                else:
+                    keys["resampling"]=50
+                    keys["random_state"] = random_state
+                    keys["aggregation_method"]=agg_function
+
+
                 mapie = ConformalClass(
-                    estimator=model,
-                    confidence_level=1 - alpha,
-                    method=method,
-                    random_state=random_state
+                    **keys
                 )
                 mapie.fit_conformalize(X_comb, y_comb)
 
             elif conformalizer == "time_serie":
+                if method not in ["aci", "enbpi"]:
+                    raise ValueError(f"method={method} is not compatible with TimeSeriesRegressor.")
                 if agg_function not in ["mean", "median"]:
                     raise ValueError(f"agg_function={agg_function} is not compatible with TimeSeriesRegressor.")
                 X_comb = pd.concat([X_train_cell, X_cal_cell])
                 y_comb = pd.concat([y_train_cell, y_cal_cell])
-                cv = BlockBootstrap(n_resamplings=15, n_blocks=3, overlapping=False, random_state=random_state)
+                cv = BlockBootstrap(n_resamplings=200, length=7, overlapping=True, random_state=random_state)
                 mapie = ConformalClass(
                     estimator=model,
-                    method="enbpi",
+                    method=method,
                     cv=cv,
                     agg_function=agg_function,
                     n_jobs=-1,
@@ -142,7 +176,7 @@ def apply_conformal_mapie_per_cell(
             if conformalizer == "time_serie":
                 y_pred_cell, y_interval_cell = mapie.predict(
                     X_test_cell,
-                    confidence_level=1 - alpha,
+                    confidence_level = 1 - alpha,
                     ensemble=True
                 )
             else:

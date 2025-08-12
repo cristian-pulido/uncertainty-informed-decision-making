@@ -320,3 +320,66 @@ def plot_temporal_metrics_over_time(
         format_ = pathlib.Path(save_path).suffix[1:]
         fig.savefig(save_path, format=format_, bbox_inches="tight", dpi=300)
     plt.show()
+
+def plot_weighted_cwc_series(
+    results_dict,
+    title="Comparison of Weighted CWC Scores by Hotspot Assignment Strategy",
+    save_path=None
+):
+    """
+    Plots weighted CWC time series for static and dynamic hotspot assignment strategies using Seaborn.
+
+    Parameters
+    ----------
+    results_dict : dict
+        Must include:
+            - 'global_value': float
+            - 'static_weighted': float
+            - 'static_series': pd.Series
+            - 'dynamic_weighted': float
+            - 'dynamic_series': pd.Series
+    title : str
+        Title for the plot.
+    save_path : str or Path, optional
+        If provided, saves the figure to the given path.
+    """
+    sns.set_theme(style="whitegrid")
+
+    # Prepare DataFrame
+    df_plot = pd.DataFrame({
+        "Timestep": results_dict["static_series"].index,
+        "Static Assignment": results_dict["static_series"].values,
+        "Dynamic Assignment": results_dict["dynamic_series"].values
+    }).melt(id_vars="Timestep", var_name="Assignment Strategy", value_name="Weighted CWC Score")
+
+    # Plot
+    plt.figure(figsize=(12, 5))
+    sns.lineplot(
+        data=df_plot,
+        x="Timestep", y="Weighted CWC Score",
+        hue="Assignment Strategy",
+        linewidth=2.2,
+        palette=["#1f77b4", "#2ca02c"]
+    )
+    plt.title(title, fontsize=14)
+    plt.xlabel("Timestep")
+    plt.ylabel("Weighted Hotspot CWC Score (WH-CWC)")
+    plt.legend(title="Assignment Strategy", loc="best", frameon=True)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    plt.show()
+
+    # Print summary
+    print("=== 🔢 WH-CWC Scores Summary ===")
+    print(f"🌐 Global CWC Score: {results_dict['global_value']:.3f}")
+    print(f"📘 Static Assignment - Weighted Score: {results_dict['static_weighted']:.3f}")
+    print(f"📗 Dynamic Assignment - Weighted Score: {results_dict['dynamic_weighted']:.3f}")
+    print("\n📊 Static Assignment Series:")
+    print(f"  Mean: {results_dict['static_series'].mean():.3f}")
+    print(f"  Std: {results_dict['static_series'].std():.3f}")
+    print("📊 Dynamic Assignment Series:")
+    print(f"  Mean: {results_dict['dynamic_series'].mean():.3f}")
+    print(f"  Std: {results_dict['dynamic_series'].std():.3f}")
