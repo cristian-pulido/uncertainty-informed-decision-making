@@ -1,78 +1,90 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_is_fitted
-from sklearn.exceptions import NotFittedError
-
-class NaiveCellMeanModel(BaseEstimator, RegressorMixin):
-    """
-    Naive model that predicts the average target value for a single spatial cell.
-    Should be used per (row, col) location.
-    """
-    def __init__(self):
-        self.fitted_ = False
-
-    def fit(self, X, y):
-        df = pd.DataFrame(X)
-        df["target"] = y
-        self.row = df["row"].iloc[0]
-        self.col = df["col"].iloc[0]
-        self.mean_ = df["target"].mean()
-        self.fitted_ = True
-        return self
-
-    def predict(self, X):
-        check_is_fitted(self, attributes=["mean_"])
-        return np.full(len(X), self.mean_)
-
-    def get_params(self, deep=True):
-        return {}
-
-    def set_params(self, **params):
-        return self
-
 
 class NaivePerCellModel(BaseEstimator, RegressorMixin):
     """
-    Naive model that stores a NaiveCellMeanModel per (row, col) cell.
-    Predicts the average target value for each cell based on training data.
+    Predice la media observada por celda (row,col) a partir del entrenamiento.
+    Si en predict aparece una celda no vista, usa un fallback configurable.
+    
+    Parameters
+    ----------
+    row_col : tuple(str, str), default=("row","col")
+        Nombres de columnas para fila y columna.
+    fallback : {"global","nan","zero"}, default="global"
+        Estrategia para celdas no vistas en el fit:
+          - "global": usa la media global de entrenamiento
+          - "nan": devuelve np.nan
+          - "zero": devuelve 0.0
     """
-    def __init__(self):
-        self.models_ = {}
-        self.fitted_ = False
+    def __init__(self, row_col=("row","col"), fallback="global"):
+        self.row_col = row_col
+        self.fallback = fallback
 
     def fit(self, X, y):
-        df = pd.DataFrame(X)
-        df["target"] = y
-        for (r, c), group in df.groupby(["row", "col"]):
-            model = NaiveCellMeanModel()
-            model.fit(group, group["target"])
-            self.models_[(r, c)] = model
-        self.fitted_ = True
+        df = pd.DataFrame(X).copy()
+        rcol, ccol = self.row_col
+
+        # Validaciones básicas
+        if rcol not in df.columns or ccol not in df.columns:
+            raise ValueError(f"X must contain '{rcol}' and '{ccol}' columns.")
+
+        y_arr = np.asarray(y)  # evita problemas de index
+        if len(df) != len(y_arr):
+            raise ValueError(f"X and y have different lengths: {len(df)} vs {len(y_arr)}")
+
+        df["_target"] = y_arr
+
+        # Media por celda
+        g = df.groupby([rcol, ccol], sort=False)["_target"].mean()
+        # Guardamos como dict para lookup rápido
+        self.cell_mean_ = g.to_dict()
+
+        # Media global para fallback
+        self.global_mean_ = float(df["_target"].mean()) if len(df) else 0.0
+
+        # Guarda tipos para asegurar consistencia
+        self._fitted_rows_ = df[rcol].dtype
+        self._fitted_cols_ = df[ccol].dtype
+
+        self.n_cells_ = len(self.cell_mean_)
+        self.is_fitted_ = True
         return self
 
     def predict(self, X):
-        check_is_fitted(self, attributes=["models_"])
+        check_is_fitted(self, attributes=["cell_mean_", "global_mean_", "is_fitted_"])
+        df = pd.DataFrame(X)
+        rcol, ccol = self.row_col
 
-        if isinstance(X, pd.DataFrame):
-            if "row" not in X.columns or "col" not in X.columns:
-                raise ValueError("DataFrame must contain 'row' and 'col' columns.")
-            df = X
-        elif isinstance(X, np.ndarray):
-            if X.shape[1] != 2:
-                raise ValueError(f"Expected ndarray with 2 columns (row, col), got shape {X.shape}")
-            df = pd.DataFrame(X, columns=["row", "col"])
+        if rcol not in df.columns or ccol not in df.columns:
+            raise ValueError(f"X must contain '{rcol}' and '{ccol}' columns.")
+
+        # Asegurar tipos comparables (por si en predict llegan como int/str mezclados)
+        r = df[rcol].astype(self._fitted_rows_, copy=False)
+        c = df[ccol].astype(self._fitted_cols_, copy=False)
+
+        # Pred por lookup; vectorizado con get en bucle (rápido para tamaños típicos)
+        if self.fallback == "global":
+            default = self.global_mean_
+        elif self.fallback == "zero":
+            default = 0.0
+        elif self.fallback == "nan":
+            default = np.nan
         else:
-            raise TypeError("X must be a DataFrame or ndarray with 2 columns.")
+            raise ValueError("fallback must be one of {'global','nan','zero'}")
 
-        return np.array([
-            self.models_.get((row, col), NaiveCellMeanModel()).predict([[row, col]])[0]
-            for row, col in zip(df["row"], df["col"])
-        ])
+        out = np.empty(len(df), dtype=float)
+        cm = self.cell_mean_
+        for i, (ri, ci) in enumerate(zip(r, c)):
+            out[i] = cm.get((ri, ci), default)
+        return out
 
-
+    # Opcional: para compatibilidad sklearn
     def get_params(self, deep=True):
-        return {}
+        return {"row_col": self.row_col, "fallback": self.fallback}
 
     def set_params(self, **params):
+        for k, v in params.items():
+            setattr(self, k, v)
         return self

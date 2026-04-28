@@ -6,7 +6,7 @@ from sklearn.base import RegressorMixin, clone
 from sklearn.linear_model import LinearRegression
 from scipy.stats import norm
 
-# Utilidades de MAPIE v1 (ya las tienes importadas en tu archivo)
+
 from mapie.utils import (
     _transform_confidence_level_to_alpha_list,
     _prepare_params,
@@ -16,6 +16,158 @@ from mapie.utils import (
     _raise_error_if_fit_called_in_prefit_mode,
 )
 from mapie.utils import _cast_point_predictions_to_ndarray, _cast_predictions_to_ndarray_tuple
+
+class MAEIntervalRegressor:
+    """
+    Regresor de intervalos 'baseline' que usa el MAE del conjunto de conformalización
+    para construir intervalos simétricos alrededor de la predicción puntual:
+        [y_pred - MAE, y_pred + MAE]
+    independientemente de X.
+
+    Flujo:
+      1) fit(X_train, y_train)        -> opcional si prefit=True
+      2) conformalize(X_cal, y_cal)   -> calcula mae_ sobre residuales en calibración
+      3) predict_interval(X)          -> devuelve (y_pred, y_pis) con formato MAPIE
+
+    Parámetros
+    ----------
+    estimator : RegressorMixin, default=LinearRegression()
+        Estimador base para predicciones puntuales.
+
+    confidence_level : Union[float, Iterable[float]], default=0.9
+        Niveles de confianza solicitados. Aquí no ajustan el ancho (el MAE es fijo),
+        sólo determinan la tercera dimensión de salida (compatibilidad tipo MAPIE).
+
+    prefit : bool, default=True
+        Si True, se asume que el estimator ya viene ajustado y se omite fit().
+    """
+
+    def __init__(
+        self,
+        estimator: RegressorMixin = LinearRegression(),
+        confidence_level: Union[float, Iterable[float]] = 0.9,
+        prefit: bool = True
+    ) -> None:
+        _check_estimator_fit_predict(estimator)
+        self._estimator = estimator
+        self._prefit = prefit
+        self._is_fitted = prefit
+        self._is_conformalized = False
+
+        # Guardamos niveles (solo para la forma de salida)
+        self._alphas = _transform_confidence_level_to_alpha_list(confidence_level)
+        self._predict_params: dict = {}
+
+        # Atributo calculado en conformalize
+        self.mae_: Optional[float] = None
+
+    # ----------------------------- PUBLIC API ----------------------------- #
+
+    def fit(
+        self,
+        X_train: ArrayLike,
+        y_train: ArrayLike,
+        fit_params: Optional[dict] = None,
+    ) -> "MAEIntervalRegressor":
+        """
+        Ajusta el estimator si prefit=False. Si prefit=True, lanza error si se llama.
+        """
+        _raise_error_if_fit_called_in_prefit_mode(self._prefit)
+        _raise_error_if_method_already_called("fit", self._is_fitted)
+
+        cloned = clone(self._estimator)
+        fit_params_ = _prepare_params(fit_params)
+        cloned.fit(X_train, y_train, **fit_params_)
+        self._estimator = cloned
+
+        self._is_fitted = True
+        return self
+
+    def conformalize(
+        self,
+        X_cal: ArrayLike,
+        y_cal: ArrayLike,
+        predict_params: Optional[dict] = None,
+    ) -> "MAEIntervalRegressor":
+        """
+        Calcula mae_ a partir de los residuales |y_cal - y_hat_cal|, donde y_hat_cal
+        son predicciones del estimator sobre X_cal.
+        """
+        _raise_error_if_previous_method_not_called(
+            "conformalize", "fit", self._is_fitted
+        )
+        _raise_error_if_method_already_called(
+            "conformalize", self._is_conformalized
+        )
+
+        X_cal = np.asarray(X_cal)
+        y_cal = np.asarray(y_cal)
+        if y_cal.size == 0:
+            raise ValueError("y_cal no puede estar vacío para MAEIntervalRegressor.")
+
+        self._predict_params = _prepare_params(predict_params)
+
+        # Predicciones sobre calibración
+        y_hat_cal = self._estimator.predict(X_cal, **self._predict_params)
+        y_hat_cal = np.asarray(y_hat_cal)
+
+        # Residuales absolutos (limpieza de posibles NaN/inf)
+        abs_res = np.abs(y_cal - y_hat_cal)
+        abs_res = abs_res[np.isfinite(abs_res)]
+        if abs_res.size == 0:
+            raise ValueError("No hay residuales válidos (no-NaN/inf) para calcular MAE.")
+
+        self.mae_ = float(np.mean(abs_res))
+
+        self._is_conformalized = True
+        return self
+
+    def predict_interval(
+        self,
+        X: ArrayLike,
+        minimize_interval_width: bool = False,  # compat
+        allow_infinite_bounds: bool = False,     # compat
+    ) -> Tuple[NDArray, NDArray]:
+        """
+        Devuelve:
+          - y_pred: (n_samples,)
+          - y_pis:  (n_samples, 2, n_confidence_levels)
+                    [:,0,:] = y_pred - MAE
+                    [:,1,:] = y_pred + MAE
+        """
+        _raise_error_if_previous_method_not_called(
+            "predict_interval", "conformalize", self._is_conformalized
+        )
+        if self.mae_ is None:
+            raise RuntimeError("Debes llamar a conformalize() antes de predecir intervalos.")
+
+        # Predicciones puntuales del estimator
+        y_pred = self._estimator.predict(X, **self._predict_params)
+        y_pred = _cast_point_predictions_to_ndarray(y_pred)  # (n,)
+
+        n = y_pred.shape[0]
+        k = len(self._alphas)
+
+        lower_vals = y_pred - self.mae_
+        upper_vals = y_pred + self.mae_
+
+        # Replicar a (n, 1, k) y concatenar a (n, 2, k)
+        lower = np.repeat(lower_vals.reshape(-1, 1, 1), k, axis=2)
+        upper = np.repeat(upper_vals.reshape(-1, 1, 1), k, axis=2)
+        y_pis = np.concatenate([lower, upper], axis=1)
+
+        return _cast_predictions_to_ndarray_tuple((y_pred, y_pis))
+
+    def predict(self, X: ArrayLike) -> NDArray:
+        """
+        Solo predicciones puntuales (requiere conformalize previo, por consistencia
+        con tu flujo actual).
+        """
+        _raise_error_if_previous_method_not_called(
+            "predict", "conformalize", self._is_conformalized
+        )
+        y_pred = self._estimator.predict(X, **self._predict_params)
+        return _cast_point_predictions_to_ndarray(y_pred)
 
 
 class MinMaxIntervalRegressor:

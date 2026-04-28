@@ -90,7 +90,10 @@ def compute_cwc(widths, in_interval, alpha=0.1, eta=8, ref=10.0):
     width_score = np.clip(widths, None, ref) / ref
     mean_width_score = np.nanmean(width_score)
     coverage = np.nanmean(in_interval)
-    penalty = np.exp(-eta * (coverage - (1 - alpha))**2)
+
+    # penalty = np.exp(-eta * (coverage - (1 - alpha))**2)
+
+    penalty = np.exp(-eta * (max(0, (1 - alpha) - coverage))**2)
 
     return (1 - mean_width_score) * penalty
 
